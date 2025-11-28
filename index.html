@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Animation Editor V4 (Position Fix)</title>
+    <title>Animation Editor V4 (Scaled Transform Controls)</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/TransformControls.js"></script>
@@ -45,6 +45,7 @@
         .log-err { color: #ff5252; }
         .log-suc { color: #69f0ae; }
         .log-warn { color: #ffd740; }
+        .transform-scale-info { background: #1a237e; padding: 8px; border-radius: 4px; margin-top: 5px; font-size: 11px; text-align: center; }
     </style>
 </head>
 <body>
@@ -66,7 +67,7 @@
             <button id="edit-mode-btn" class="action-btn">✎ Enter Edit Mode</button>
             <div style="display: flex; gap: 5px;">
                 <button id="undo-btn" class="action-btn" disabled style="flex:1;">⎌ Undo (0)</button>
-                <button onclick="testPositionCalculation()" class="action-btn" style="flex:1;">🧪 Test</button>
+                <button onclick="resetCurrentFrame()" class="action-btn" style="flex:1;">🔄 Reset Frame</button>
             </div>
             
             <div id="save-tools" style="display:none; margin-top:5px; padding-top:5px; border-top:1px dashed #444;">
@@ -79,7 +80,16 @@
         </div>
 
         <div class="panel">
-            <h3>3. Settings</h3>
+            <h3>3. Transform Settings</h3>
+            <div class="control-group">
+                <label>Move Scale Factor:</label>
+                <input type="number" id="move-scale-input" value="100.0" step="10.0" min="1.0" max="1000.0">
+            </div>
+            <div class="transform-scale-info">
+                ⚡ <strong>Transform Scale: 100x</strong><br>
+                <small>1 unit movement = 100 units in animation</small>
+            </div>
+            
             <div class="control-group">
                 <label>Pos Scale (Read):</label>
                 <input type="number" id="scale-factor-input" value="100000.0" step="1.0">
@@ -92,29 +102,26 @@
                 <label>Header Offset:</label>
                 <input type="number" id="offset-input" value="0">
             </div>
-            <div class="control-group">
-                <label>Move Sensitivity:</label>
-                <input type="number" id="move-sensitivity" value="1.0" step="0.1" min="0.1" max="10.0">
-            </div>
             <button onclick="reparseCurrentBuffer()" class="action-btn" style="background:#444;">↻ Reload Data</button>
         </div>
 
         <div class="panel">
-            <h3>Debug Controls</h3>
-            <div class="control-group">
-                <label>Manual X Offset:</label>
-                <input type="number" id="debug-x" value="0" step="1">
+            <h3>4. Quick Movements</h3>
+            <div style="display: flex; gap: 5px; margin-bottom: 5px;">
+                <button onclick="applyQuickMove(10, 0, 0)" class="action-btn" style="flex:1;">X+10</button>
+                <button onclick="applyQuickMove(-10, 0, 0)" class="action-btn" style="flex:1;">X-10</button>
             </div>
-            <div class="control-group">
-                <label>Manual Y Offset:</label>
-                <input type="number" id="debug-y" value="0" step="1">
+            <div style="display: flex; gap: 5px; margin-bottom: 5px;">
+                <button onclick="applyQuickMove(0, 10, 0)" class="action-btn" style="flex:1;">Y+10</button>
+                <button onclick="applyQuickMove(0, -10, 0)" class="action-btn" style="flex:1;">Y-10</button>
             </div>
-            <div class="control-group">
-                <label>Manual Z Offset:</label>
-                <input type="number" id="debug-z" value="0" step="1">
+            <div style="display: flex; gap: 5px;">
+                <button onclick="applyQuickMove(0, 0, 10)" class="action-btn" style="flex:1;">Z+10</button>
+                <button onclick="applyQuickMove(0, 0, -10)" class="action-btn" style="flex:1;">Z-10</button>
             </div>
-            <button onclick="applyManualOffset()" class="action-btn">Apply Manual Offset</button>
-            <button onclick="debugBoneValues()" class="action-btn" style="margin-top:5px;">📊 Debug Values</button>
+            <div style="font-size: 11px; color: #666; margin-top: 5px; text-align: center;">
+                <em>Applies to selected bone</em>
+            </div>
         </div>
 
         <div class="panel" style="display:flex; flex-direction:column; flex-grow:1; margin-bottom:0;">
@@ -234,7 +241,7 @@ let undoStack = [];
 let loadedFileName = "animation.bytes";
 const MAX_UNDO = 5;
 let T_POSE_CENTER_OFFSET = new THREE.Vector3(0, 0, 0);
-let moveSensitivity = 1.0;
+let moveScaleFactor = 100.0; // How much to scale transform movements
 
 // Timeline Vars
 let tlCanvas, tlCtx;
@@ -353,7 +360,7 @@ function parseAnimationData(buffer) {
 }
 
 // ==========================================
-// 3. 3D VIEWER
+// 3. SCALED TRANSFORM SYSTEM
 // ==========================================
 function initViewer() {
     const container = document.getElementById('canvas-container');
@@ -377,20 +384,17 @@ function initViewer() {
     
     transformControl = new THREE.TransformControls(camera, renderer.domElement);
     
-    // FIXED EVENT HANDLERS
+    // SCALED TRANSFORM EVENT HANDLERS
     transformControl.addEventListener('objectChange', () => {
         if (transformControl.object && !transformControl.dragging) {
-            console.log("Transform control changed - object:", transformControl.object.name);
             updateBoneFromTransform(transformControl.object);
         }
     });
 
     transformControl.addEventListener('dragging-changed', (event) => {
         controls.enabled = !event.value;
-        console.log("Dragging changed:", event.value);
         
         if (!event.value && transformControl.object) {
-            console.log("Drag ended - recording undo");
             recordUndo();
             updateBoneFromTransform(transformControl.object);
             updateSkeletonPose(currentFrame);
@@ -450,18 +454,46 @@ document.getElementById('canvas-container').addEventListener('pointerdown', (eve
     }
 });
 
-function selectNode(boneObject) {
+function selectNode(boneObj) {
     boneMeshes.forEach(n => n.material.color.setHex(0x00ff00));
-    const meshToHighlight = boneMeshes.find(m => m.userData.boneId === boneObject.userData.boneId);
+    const meshToHighlight = boneMeshes.find(m => m.userData.boneId === boneObj.userData.boneId);
     if(meshToHighlight) meshToHighlight.material.color.setHex(0x0088ff);
     
-    transformControl.attach(boneObject);
-    console.log("Selected bone:", boneObject.name, "ID:", boneObject.userData.boneId);
+    transformControl.attach(boneObj);
+    log(`Selected: ${boneObj.name} (ID: ${boneObj.userData.boneId})`, "info");
 }
 
 function deselectNode() {
     transformControl.detach();
     boneMeshes.forEach(n => n.material.color.setHex(0x00ff00));
+}
+
+// KEY FUNCTION: Apply scaled movement to animation data
+function updateBoneFromTransform(boneObj) {
+    if(!animationFrames[currentFrame]) return;
+    const id = boneObj.userData.boneId;
+    
+    // Get the current visual position (scaled for user interaction)
+    const currentVisualPos = boneObj.position.clone();
+    
+    // Calculate the animation offset (scaled up for game precision)
+    const initialLocalPos = boneObj.userData.initialLocalPos.clone();
+    const visualOffset = currentVisualPos.sub(initialLocalPos);
+    
+    // Scale the offset for the actual animation data
+    const animationOffset = visualOffset.multiplyScalar(moveScaleFactor);
+    
+    console.log(`Transform Update - ${boneObj.name}:`);
+    console.log(`  Visual movement: ${visualOffset.toArray().map(v => v.toFixed(3))}`);
+    console.log(`  Scaled to animation: ${animationOffset.toArray().map(v => v.toFixed(6))}`);
+    
+    // Store in animation data
+    const existing = animationFrames[currentFrame][id];
+    if(existing && existing.userData.rotBytes) {
+        animationOffset.userData = { rotBytes: existing.userData.rotBytes };
+    }
+
+    animationFrames[currentFrame][id] = animationOffset;
 }
 
 function parseSkeletonText(txt) {
@@ -502,7 +534,7 @@ function parseSkeletonText(txt) {
         (minY + maxY) / 2, 
         (minZ + maxZ) / 2
     );
-    log(`T-Pose Center Calculated: (${T_POSE_CENTER_OFFSET.x.toFixed(2)}, ${T_POSE_CENTER_OFFSET.y.toFixed(2)}, ${T_POSE_CENTER_OFFSET.z.toFixed(2)})`, "info");
+    log(`T-Pose Center: (${T_POSE_CENTER_OFFSET.x.toFixed(2)}, ${T_POSE_CENTER_OFFSET.y.toFixed(2)}, ${T_POSE_CENTER_OFFSET.z.toFixed(2)})`, "info");
     
     skel.forEach(bone => {
         bone.initialLocalPos = bone.initialGlobalPos.clone().sub(T_POSE_CENTER_OFFSET);
@@ -575,35 +607,6 @@ function buildSkeletonVisuals() {
     });
 }
 
-// FIXED POSITION UPDATE FUNCTION
-function updateBoneFromTransform(boneObj) {
-    if(!animationFrames[currentFrame]) return;
-    const id = boneObj.userData.boneId;
-    
-    console.log("=== BONE TRANSFORM UPDATE ===");
-    console.log("Bone ID:", id, "Name:", boneObj.name);
-    console.log("Current bone position:", boneObj.position.toArray());
-    console.log("Initial local pos:", boneObj.userData.initialLocalPos.toArray());
-    
-    const newPosRelativeToCenter = boneObj.position.clone();
-    const initialLocalPos = boneObj.userData.initialLocalPos.clone();
-    const newAnimOffset = newPosRelativeToCenter.sub(initialLocalPos);
-    
-    console.log("Calculated animation offset:", newAnimOffset.toArray());
-    console.log("Offset magnitude:", newAnimOffset.length());
-    
-    const existing = animationFrames[currentFrame][id];
-    if(existing && existing.userData.rotBytes) {
-        newAnimOffset.userData = { rotBytes: existing.userData.rotBytes };
-    }
-
-    animationFrames[currentFrame][id] = newAnimOffset;
-    console.log("Stored in animation frame:", animationFrames[currentFrame][id].toArray());
-    
-    // Force immediate visual update
-    updateSkeletonPose(currentFrame);
-}
-
 function updateSkeletonPose(frameIdx) {
     if(!animationFrames[frameIdx]) return;
     const frameData = animationFrames[frameIdx];
@@ -617,7 +620,9 @@ function updateSkeletonPose(frameIdx) {
         let finalLocalPos = initialLocalPos.clone();
         
         if(frameData[id]) {
-            finalLocalPos.add(frameData[id]);
+            // Scale down the animation data for visual display
+            const visualOffset = frameData[id].clone().divideScalar(moveScaleFactor);
+            finalLocalPos.add(visualOffset);
         }
         
         boneObj.position.copy(finalLocalPos);
@@ -660,7 +665,41 @@ function animate(time) {
 }
 
 // ==========================================
-// 4. TIMELINE LOGIC
+// 4. QUICK MOVEMENT FUNCTIONS
+// ==========================================
+function applyQuickMove(x, y, z) {
+    if (!transformControl.object) {
+        log("No bone selected", "err");
+        return;
+    }
+    
+    const move = new THREE.Vector3(x, y, z);
+    transformControl.object.position.add(move);
+    
+    updateBoneFromTransform(transformControl.object);
+    updateSkeletonPose(currentFrame);
+    
+    log(`Quick move applied: (${x}, ${y}, ${z})`, "info");
+}
+
+function resetCurrentFrame() {
+    if(!animationFrames[currentFrame]) return;
+    
+    // Reset all bones in current frame to zero offset
+    Object.keys(animationFrames[currentFrame]).forEach(boneId => {
+        const vec = animationFrames[currentFrame][boneId];
+        if(vec && vec.userData.rotBytes) {
+            animationFrames[currentFrame][boneId] = new THREE.Vector3(0, 0, 0);
+            animationFrames[currentFrame][boneId].userData = { rotBytes: vec.userData.rotBytes };
+        }
+    });
+    
+    updateSkeletonPose(currentFrame);
+    log(`Frame ${currentFrame} reset to T-pose`, "info");
+}
+
+// ==========================================
+// 5. TIMELINE LOGIC
 // ==========================================
 function initTimeline() {
     tlCanvas = document.getElementById('timeline-canvas');
@@ -791,84 +830,6 @@ function updateUIForFrame(f) {
     
     drawTimeline();
     updateSkeletonPose(f);
-}
-
-// ==========================================
-// 5. DEBUG & FIX FUNCTIONS
-// ==========================================
-function applyManualOffset() {
-    if (!transformControl.object) {
-        log("No bone selected", "err");
-        return;
-    }
-    
-    const x = parseFloat(document.getElementById('debug-x').value);
-    const y = parseFloat(document.getElementById('debug-y').value);
-    const z = parseFloat(document.getElementById('debug-z').value);
-    
-    const offset = new THREE.Vector3(x, y, z);
-    transformControl.object.position.add(offset);
-    
-    updateBoneFromTransform(transformControl.object);
-    updateSkeletonPose(currentFrame);
-    
-    console.log("Applied manual offset:", offset.toArray());
-    log(`Applied manual offset: (${x}, ${y}, ${z})`, "info");
-}
-
-function debugBoneValues() {
-    if (!animationFrames[currentFrame]) return;
-    
-    console.log("=== CURRENT FRAME BONE VALUES ===");
-    Object.entries(animationFrames[currentFrame]).forEach(([boneId, vec]) => {
-        const boneName = BONE_MAP[boneId] || `Bone_${boneId}`;
-        console.log(`${boneName}: (${vec.x.toFixed(6)}, ${vec.y.toFixed(6)}, ${vec.z.toFixed(6)})`);
-        
-        const SCALE_FACTOR = parseFloat(document.getElementById('scale-factor-input').value) || 100000.0;
-        const EXPORT_MULTIPLIER = parseFloat(document.getElementById('export-multiplier-input').value) || 1.0;
-        
-        const exportX = float32ToRawInt16(vec.x, SCALE_FACTOR, EXPORT_MULTIPLIER);
-        const exportY = float32ToRawInt16(vec.y, SCALE_FACTOR, EXPORT_MULTIPLIER);
-        const exportZ = float32ToRawInt16(vec.z, SCALE_FACTOR, EXPORT_MULTIPLIER);
-        
-        console.log(`  -> Export: (${exportX}, ${exportY}, ${exportZ})`);
-    });
-}
-
-function testPositionCalculation() {
-    if (!transformControl.object) {
-        log("No bone selected for test", "err");
-        return;
-    }
-    
-    const boneObj = transformControl.object;
-    const id = boneObj.userData.boneId;
-    
-    console.log("=== POSITION CALCULATION TEST ===");
-    
-    // Method 1: Current method
-    const currentPos = boneObj.position.clone();
-    const initialPos = boneObj.userData.initialLocalPos.clone();
-    const offset1 = currentPos.sub(initialPos);
-    
-    console.log("Method 1 - Current - Initial:", offset1.toArray());
-    
-    // Method 2: Direct assignment
-    const offset2 = boneObj.position.clone();
-    
-    console.log("Method 2 - Direct position:", offset2.toArray());
-    
-    // Test which one works
-    const testOffset = new THREE.Vector3(10, 0, 0); // Test with 10 units on X
-    animationFrames[currentFrame][id] = testOffset.clone();
-    
-    if(animationFrames[currentFrame][id].userData && animationFrames[currentFrame][id].userData.rotBytes) {
-        testOffset.userData = { rotBytes: animationFrames[currentFrame][id].userData.rotBytes };
-    }
-    
-    updateSkeletonPose(currentFrame);
-    console.log("Applied test offset (10,0,0) - check if bone moved");
-    log("Applied test offset (10,0,0) - check visual", "info");
 }
 
 // ==========================================
@@ -1046,10 +1007,20 @@ function setupUI() {
     document.getElementById('scale-factor-input').addEventListener('change', reparseCurrentBuffer);
     document.getElementById('offset-input').addEventListener('change', reparseCurrentBuffer);
     
-    document.getElementById('move-sensitivity').addEventListener('change', (e) => {
-        moveSensitivity = parseFloat(e.target.value);
-        console.log("Move sensitivity set to:", moveSensitivity);
+    // Move scale factor update
+    document.getElementById('move-scale-input').addEventListener('change', (e) => {
+        moveScaleFactor = parseFloat(e.target.value);
+        updateTransformScaleInfo();
+        log(`Move scale factor set to: ${moveScaleFactor}x`, "info");
     });
+    
+    updateTransformScaleInfo();
+}
+
+function updateTransformScaleInfo() {
+    const infoElement = document.querySelector('.transform-scale-info');
+    infoElement.innerHTML = `⚡ <strong>Transform Scale: ${moveScaleFactor}x</strong><br>
+    <small>1 unit movement = ${moveScaleFactor} units in animation</small>`;
 }
 
 document.addEventListener('DOMContentLoaded', initViewer);
