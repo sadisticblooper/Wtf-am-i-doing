@@ -3,11 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Animation Editor V6 (Scale Factor 3.2767)</title>
+    <title>Animation Editor V4 (Hierarchy Fix Revert)</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/TransformControls.js"></script>
     <style>
+        /* ... (Style sheet remains the same) ... */
         body { margin: 0; overflow: hidden; background-color: #121212; font-family: 'Inter', 'Segoe UI', sans-serif; color: white; }
         #app-container { display: flex; height: 100vh; width: 100vw; overflow: hidden; position: relative; }
         #sidebar { width: 360px; min-width: 360px; background: #1e1e1e; border-right: 1px solid #333; display: flex; flex-direction: column; padding: 10px; z-index: 20; transition: margin-left 0.3s ease, min-width 0.3s ease; height: 100%; overflow-y: auto; margin-left: 0; position: relative; }
@@ -80,21 +81,10 @@
         <div class="panel">
             <h3>3. Settings</h3>
             <div class="control-group">
-                <label>Pos Scale (Read/Write):</label>
-                <input type="number" id="scale-factor-input" value="3.2767" step="0.0001">
-            </div>
-            <div class="control-group">
-                <label>Export Multiplier (Write):</label>
-                <input type="number" id="export-multiplier-input" value="1.0" step="0.1">
-            </div>
-            <div class="control-group">
                 <label>Header Offset:</label>
                 <input type="number" id="offset-input" value="0">
             </div>
             <button onclick="reparseCurrentBuffer()" class="action-btn" style="background:#444;">↻ Reload Data</button>
-            <div style="font-size: 11px; color: #ffeb3b; margin-top: 5px; text-align: center;">
-                ⚠️ Max editable displacement is ~10000 units. Changes beyond this will lose precision.
-            </div>
         </div>
 
         <div class="panel" style="display:flex; flex-direction:column; flex-grow:1; margin-bottom:0;">
@@ -233,25 +223,51 @@ function log(msg, type="info") {
     d.scrollTop = d.scrollHeight;
 }
 
-// Function to read Float16 data from file and convert to 3D Viewer float
-function readFloat16(view, offset, littleEndian, scale) {
-    if(offset + 2 > view.byteLength) return 0;
-    const shortValue = view.getInt16(offset, littleEndian);
-    return shortValue / scale;
+// Function to convert 16-bit unsigned integer (Float16) to Float32
+function float16ToFloat32(uint16) {
+    const sign = (uint16 & 0x8000) ? -1 : 1;
+    const exponent = (uint16 & 0x7C00) >> 10;
+    const fraction = uint16 & 0x03FF;
+
+    if (exponent === 0) {
+        // Subnormal or Zero
+        return sign * Math.pow(2, -14) * (fraction / 1024);
+    } else if (exponent === 0x1F) {
+        // Inf or NaN
+        return fraction ? NaN : sign * Infinity;
+    }
+
+    // Normal: sign * 2^(exponent - 15) * (1 + fraction/1024)
+    return sign * Math.pow(2, exponent - 15) * (1 + fraction / 1024);
 }
 
-// Function to convert 3D Viewer float to raw Int16 data for EXPORT
-function float32ToRawInt16(value, scaleFactor, exportMultiplier) {
-    const multipliedValue = value * exportMultiplier;
-    
-    let intVal = Math.round(multipliedValue * scaleFactor);
+// Function to read Float16 data from file (NO EXTERNAL SCALE)
+function readFloat16(view, offset) {
+    if(offset + 2 > view.byteLength) return 0;
+    // Read as Uint16, little-endian (true)
+    const uint16 = view.getUint16(offset, true); 
+    return float16ToFloat32(uint16);
+}
 
-    // Removed explicit clamping. With scaleFactor=3.2767, up to ~10000 units is safe.
-    // DataView.setInt16 will handle the final conversion/clamping.
-    // if(intVal > 32767) intVal = 32767;
-    // if(intVal < -32768) intVal = -32768;
+// Function to convert 3D Viewer float to raw Uint16 data for EXPORT
+function float32ToRawUint16(value) {
+    const float32 = new Float32Array([value]);
+    const uint32 = new Uint32Array(float32.buffer)[0];
     
-    return intVal;
+    const sign = (uint32 >> 31) & 0x1;
+    let exponent = ((uint32 >> 23) & 0xFF) - 127; // Exponent bias for Float32 is 127
+    const fraction = (uint32 >> 13) & 0x3FF;
+
+    // Handle edge cases for half-precision (bias 15)
+    if (exponent > 15) {
+        return (sign << 15) | 0x7C00; // Clamp to Infinity
+    }
+    if (exponent < -14) {
+        return (sign << 15); // Clamp to Zero
+    }
+
+    exponent += 15; // Re-bias for Float16 (bias 15)
+    return (sign << 15) | (exponent << 10) | fraction;
 }
 
 
@@ -266,7 +282,7 @@ function reparseCurrentBuffer() {
         
         currentFrame = 0;
         
-        // REBUILD SKELETON: Hierarchy/Centering logic fixed in V4
+        // REBUILD SKELETON: REVERTED TO FLAT STRUCTURE TO AVOID HIERARCHY MISMATCH
         skeletonData = parseSkeletonText(DEFAULT_SKELETON_TXT); 
         buildSkeletonVisuals();
         
@@ -288,8 +304,7 @@ function reparseCurrentBuffer() {
 function parseAnimationData(buffer) {
     const view = new DataView(buffer);
     let offset = parseInt(document.getElementById('offset-input').value) || 0;
-    // Use the user's input scale factor, now defaulted to 3.2767
-    const scaleFactor = parseFloat(document.getElementById('scale-factor-input').value) || 3.2767;
+    // const scaleFactor = parseFloat(document.getElementById('scale-factor-input').value) || 100000.0; // REMOVED
     
     const metadata = { header: 0n, garbageSize: 0, garbageData: null, boneCount: 0, boneIds: [], remainingData: null, headerOffset: offset };
 
@@ -323,9 +338,10 @@ function parseAnimationData(buffer) {
         if (readPtr + frameSize > buffer.byteLength) break;
         const frameData = {}; 
         for (let b = 0; b < boneCount; b++) {
-            const posX = readFloat16(view, readPtr, true, scaleFactor);
-            const posY = readFloat16(view, readPtr + 2, true, scaleFactor);
-            const posZ = readFloat16(view, readPtr + 4, true, scaleFactor);
+            // FIX: Removed scaleFactor and littleEndian, relying on the new Float16 reader
+            const posX = readFloat16(view, readPtr);
+            const posY = readFloat16(view, readPtr + 2);
+            const posZ = readFloat16(view, readPtr + 4);
             const rotBytes = buffer.slice(readPtr + 6, readPtr + 12);
             const boneId = metadata.boneIds[b];
             
@@ -786,7 +802,7 @@ function updateUIForFrame(f) {
 }
 
 // ==========================================
-// 5. APP LOGIC - No Change
+// 5. APP LOGIC - REVISED RECONSTRUCT BINARY
 // ==========================================
 function toggleEditMode() {
     isEditMode = !isEditMode;
@@ -861,8 +877,8 @@ function exportBytes() {
 }
 
 function reconstructBinary() {
-    const SCALE_FACTOR = parseFloat(document.getElementById('scale-factor-input').value) || 3.2767;
-    const EXPORT_MULTIPLIER = parseFloat(document.getElementById('export-multiplier-input').value) || 1.0;
+    // const SCALE_FACTOR = parseFloat(document.getElementById('scale-factor-input').value) || 100000.0; // REMOVED
+    // const EXPORT_MULTIPLIER = parseFloat(document.getElementById('export-multiplier-input').value) || 1.0; // REMOVED
     
     const headerSize = 8;
     const garbageLenSize = 2;
@@ -901,9 +917,10 @@ function reconstructBinary() {
             const y = vec ? vec.y : 0; 
             const z = vec ? vec.z : 0;
             
-            view.setInt16(ptr, float32ToRawInt16(x, SCALE_FACTOR, EXPORT_MULTIPLIER), true);
-            view.setInt16(ptr+2, float32ToRawInt16(y, SCALE_FACTOR, EXPORT_MULTIPLIER), true);
-            view.setInt16(ptr+4, float32ToRawInt16(z, SCALE_FACTOR, EXPORT_MULTIPLIER), true);
+            // FIX: Use the new Float16 encoder and set as Uint16
+            view.setUint16(ptr, float32ToRawUint16(x), true);
+            view.setUint16(ptr+2, float32ToRawUint16(y), true);
+            view.setUint16(ptr+4, float32ToRawUint16(z), true);
             ptr += 6;
             
             if(vec && vec.userData.rotBytes) new Uint8Array(buffer).set(vec.userData.rotBytes, ptr);
@@ -957,7 +974,7 @@ function setupUI() {
     document.getElementById('tick-btn').addEventListener('click', saveProgress);
     document.getElementById('export-btn').addEventListener('click', exportBytes);
     
-    document.getElementById('scale-factor-input').addEventListener('change', reparseCurrentBuffer);
+    // Listeners for the removed inputs are also removed.
     document.getElementById('offset-input').addEventListener('change', reparseCurrentBuffer);
 }
 
