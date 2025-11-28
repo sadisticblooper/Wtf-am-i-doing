@@ -211,8 +211,10 @@ let tlScale = 10;
 let tlScrollX = 0;
 let isDraggingTimeline = false;
 
+let rawBuffer = null;
+
 // ==========================================
-// 2. PARSER & UTILS
+// 2. PARSER & UTILS (IEEE 754 Float16 Implementation)
 // ==========================================
 function log(msg, type="info") {
     const d = document.getElementById('log-output');
@@ -241,7 +243,7 @@ function float16ToFloat32(uint16) {
     return sign * Math.pow(2, exponent - 15) * (1 + fraction / 1024);
 }
 
-// Function to read Float16 data from file (NO EXTERNAL SCALE)
+// Function to read Float16 data from file
 function readFloat16(view, offset) {
     if(offset + 2 > view.byteLength) return 0;
     // Read as Uint16, little-endian (true)
@@ -251,48 +253,300 @@ function readFloat16(view, offset) {
 
 // Function to convert 3D Viewer float to raw Uint16 data for EXPORT
 function float32ToRawUint16(value) {
+    // This is a simplified/non-standard conversion common in JS context
+    // A more robust implementation would be needed for perfect fidelity,
+    // but this is the standard JS half-float implementation.
     const float32 = new Float32Array([value]);
     const uint32 = new Uint32Array(float32.buffer)[0];
     
     const sign = (uint32 >> 31) & 0x1;
     let exponent = ((uint32 >> 23) & 0xFF) - 127; // Exponent bias for Float32 is 127
-    const fraction = (uint32 >> 13) & 0x3FF;
+    const mantissa = (uint32 & 0x7FFFFF) >> 13;
 
-    // Handle edge cases for half-precision (bias 15)
-    if (exponent > 15) {
-        return (sign << 15) | 0x7C00; // Clamp to Infinity
+    // Handle large/infinity
+    if (exponent >= 16) {
+        return (sign << 15) | 0x7C00; 
     }
-    if (exponent < -14) {
-        return (sign << 15); // Clamp to Zero
+    // Handle very small/denormalized
+    if (exponent <= -15) {
+        return (sign << 15); 
     }
-
+    
     exponent += 15; // Re-bias for Float16 (bias 15)
-    return (sign << 15) | (exponent << 10) | fraction;
+    return (sign << 15) | (exponent << 10) | mantissa;
 }
 
 
-let rawBuffer = null;
+// ==========================================
+// BINARY MODDER UTILITY (Encapsulates mod-axis-ops.js functions)
+// ==========================================
+const BinaryModder = {
+    log: log,
+    updateProgress: (p) => { /* Placeholder for a real progress bar */ },
+    concatArrayBuffers: (buffers) => {
+        let totalLength = 0;
+        buffers.forEach(buffer => totalLength += buffer.byteLength);
+        const result = new Uint8Array(totalLength);
+        let offset = 0;
+        buffers.forEach(buffer => {
+            result.set(new Uint8Array(buffer), offset);
+            offset += buffer.byteLength;
+        });
+        return result.buffer;
+    },
+
+    /**
+     * @param {ArrayBuffer} boneData 12-byte raw data (6-byte pos, 6-byte rot)
+     * @param {function(number[]): number[] | null} modifier Function to change [x, y, z] position
+     * @returns {ArrayBuffer | null} The processed 12-byte bone data
+     */
+    processBoneData: function(boneData, modifier) {
+        if (boneData.byteLength !== 12) return null;
+        
+        const inputView = new DataView(boneData);
+        
+        // 1. Read Position (3 x Float16) - FIX IS HERE: use float16ToFloat32
+        const pos = [
+            float16ToFloat32(inputView.getUint16(0, true)),
+            float16ToFloat32(inputView.getUint16(2, true)),
+            float16ToFloat32(inputView.getUint16(4, true))
+        ];
+
+        // 2. Apply Modifier
+        if (modifier) {
+            modifier(pos);
+        }
+        
+        // 3. Prepare Output Buffer (6 bytes pos + 6 bytes rot)
+        const outputBuffer = new ArrayBuffer(12);
+        const outputView = new DataView(outputBuffer);
+
+        // 4. Write Position (3 x Float16) - FIX IS HERE: use float32ToRawUint16
+        outputView.setUint16(0, float32ToRawUint16(pos[0]), true);
+        outputView.setUint16(2, float32ToRawUint16(pos[1]), true);
+        outputView.setUint16(4, float32ToRawUint16(pos[2]), true);
+
+        // 5. Copy Rotation (last 6 bytes)
+        for (let i = 6; i < 12; i++) {
+            outputView.setUint8(i, inputView.getUint8(i));
+        }
+        
+        return outputBuffer;
+    },
+    
+    // --- START mod-axis-ops.js functions (bound to BinaryModder context) ---
+    axisAdderAnimation: function(animationData, xOffset, yOffset, zOffset, selectedBones) {
+        const { framesLength, boneIds, animationDataBytes, remainingData } = animationData;
+        const boneCount = boneIds.length;
+        const frameSize = boneCount * 12;
+        
+        const outputChunks = [];
+        
+        this.log(`Axis adder: X=${xOffset}, Y=${yOffset}, Z=${zOffset}, Bones=${selectedBones.length}`, 'info');
+        this.updateProgress(10);
+        
+        for (let frameId = 0; frameId < framesLength; frameId++) {
+            const frameOffset = frameId * frameSize;
+            const frameBuffer = new ArrayBuffer(frameSize);
+            const frameView = new DataView(frameBuffer);
+            
+            for (let boneIdx = 0; boneIdx < boneCount; boneIdx++) {
+                const boneOffset = frameOffset + (boneIdx * 12);
+                const boneData = animationDataBytes.slice(boneOffset, boneOffset + 12);
+                
+                let modifier = null;
+                if (selectedBones.includes(boneIds[boneIdx])) {
+                    modifier = (pos) => {
+                        pos[0] += parseFloat(xOffset);
+                        pos[1] += parseFloat(yOffset);
+                        pos[2] += parseFloat(zOffset);
+                        return pos;
+                    };
+                }
+                
+                // Use the corrected processBoneData
+                const processedBoneData = this.processBoneData(boneData, modifier);
+                
+                if (processedBoneData) {
+                    const processedView = new DataView(processedBoneData);
+                    const targetOffset = boneIdx * 12;
+                    for (let i = 0; i < 12; i++) {
+                        frameView.setUint8(targetOffset + i, processedView.getUint8(i));
+                    }
+                }
+            }
+            
+            outputChunks.push(frameBuffer);
+            
+            if (frameId % 10 === 0) {
+                const progress = 10 + (frameId / framesLength) * 80;
+                this.updateProgress(progress);
+            }
+        }
+        
+        this.updateProgress(90);
+        return {
+            newFramesLength: framesLength,
+            data: this.concatArrayBuffers(outputChunks),
+            remainingData: remainingData
+        };
+    },
+
+    axisScalerAnimation: function(animationData, scaleFactor, selectedBones) {
+        const { framesLength, boneIds, animationDataBytes, remainingData } = animationData;
+        const boneCount = boneIds.length;
+        const frameSize = boneCount * 12;
+        const PROGRESSIVE_FRAMES = 10;
+        const progressiveFrames = Math.min(PROGRESSIVE_FRAMES, framesLength);
+        
+        const progressiveFactors = [];
+        for (let frameIdx = 0; frameIdx < framesLength; frameIdx++) {
+            if (frameIdx < progressiveFrames && progressiveFrames > 1) {
+                const t = frameIdx / (progressiveFrames - 1);
+                progressiveFactors.push(1.0 + (scaleFactor - 1.0) * t);
+            } else {
+                progressiveFactors.push(scaleFactor);
+            }
+        }
+        
+        const outputChunks = [];
+        
+        this.log(`Axis scaler: factor=${scaleFactor}, bones=${selectedBones.length > 0 ? selectedBones.join(',') : 'all'}`, 'info');
+        this.updateProgress(10);
+        
+        for (let frameId = 0; frameId < framesLength; frameId++) {
+            const currentScale = progressiveFactors[frameId];
+            const frameOffset = frameId * frameSize;
+            const frameBuffer = new ArrayBuffer(frameSize);
+            const frameView = new DataView(frameBuffer);
+            
+            for (let boneIdx = 0; boneIdx < boneCount; boneIdx++) {
+                const boneOffset = frameOffset + (boneIdx * 12);
+                const boneData = animationDataBytes.slice(boneOffset, boneOffset + 12);
+                
+                let modifier = null;
+                if (selectedBones.includes(boneIds[boneIdx])) {
+                    modifier = (pos) => {
+                        pos[0] *= currentScale;
+                        pos[1] *= currentScale;
+                        pos[2] *= currentScale;
+                        return pos;
+                    };
+                }
+                
+                // Use the corrected processBoneData
+                const processedBoneData = this.processBoneData(boneData, modifier);
+                
+                if (processedBoneData) {
+                    const processedView = new DataView(processedBoneData);
+                    const targetOffset = boneIdx * 12;
+                    for (let i = 0; i < 12; i++) {
+                        frameView.setUint8(targetOffset + i, processedView.getUint8(i));
+                    }
+                }
+            }
+            
+            outputChunks.push(frameBuffer);
+            
+            if (frameId % 10 === 0) {
+                const progress = 10 + (frameId / framesLength) * 80;
+                this.updateProgress(progress);
+            }
+        }
+        
+        this.updateProgress(90);
+        return {
+            newFramesLength: framesLength,
+            data: this.concatArrayBuffers(outputChunks),
+            remainingData: remainingData
+        };
+    },
+
+    axisSetterAnimation: function(animationData, xValue, yValue, zValue, targetBoneId) {
+        const { framesLength, boneIds, animationDataBytes, remainingData } = animationData;
+        const boneCount = boneIds.length;
+        const frameSize = boneCount * 12;
+        
+        const outputChunks = [];
+        
+        this.log(`Axis setter: X=${xValue}, Y=${yValue}, Z=${zValue}, Target Bone=${targetBoneId}`, 'info');
+        this.updateProgress(10);
+        
+        const targetBoneIndex = boneIds.indexOf(targetBoneId);
+        
+        if (targetBoneIndex === -1) {
+            this.log(`Error: Bone ID ${targetBoneId} not found in animation data`, 'error');
+            return null;
+        }
+        
+        for (let frameId = 0; frameId < framesLength; frameId++) {
+            const frameOffset = frameId * frameSize;
+            const frameBuffer = new ArrayBuffer(frameSize);
+            const frameView = new DataView(frameBuffer);
+            
+            for (let boneIdx = 0; boneIdx < boneCount; boneIdx++) {
+                const boneOffset = frameOffset + (boneIdx * 12);
+                const boneData = animationDataBytes.slice(boneOffset, boneOffset + 12);
+                
+                let modifier = null;
+                if (boneIdx === targetBoneIndex) {
+                    modifier = (pos) => {
+                        if (xValue !== 0) pos[0] = parseFloat(xValue);
+                        if (yValue !== 0) pos[1] = parseFloat(yValue);
+                        if (zValue !== 0) pos[2] = parseFloat(zValue);
+                        return pos;
+                    };
+                }
+                
+                // Use the corrected processBoneData
+                const processedBoneData = this.processBoneData(boneData, modifier);
+                
+                if (processedBoneData) {
+                    const processedView = new DataView(processedBoneData);
+                    const targetOffset = boneIdx * 12;
+                    for (let i = 0; i < 12; i++) {
+                        frameView.setUint8(targetOffset + i, processedView.getUint8(i));
+                    }
+                }
+            }
+            
+            outputChunks.push(frameBuffer);
+            
+            if (frameId % 10 === 0) {
+                const progress = 10 + (frameId / framesLength) * 80;
+                this.updateProgress(progress);
+            }
+        }
+        
+        this.updateProgress(90);
+        return {
+            newFramesLength: framesLength,
+            data: this.concatArrayBuffers(outputChunks),
+            remainingData: remainingData
+        };
+    }
+    // --- END mod-axis-ops.js functions ---
+};
+
 
 function reparseCurrentBuffer() {
     if(!rawBuffer) { log("No file loaded.", "err"); return; }
     try {
+        // NOTE: The previous `parseAnimationData` now uses Float16 correctly
         const result = parseAnimationData(rawBuffer);
         animationFrames = result.frames;
         fileMetadata = result.metadata;
         
         currentFrame = 0;
         
-        // REBUILD SKELETON: REVERTED TO FLAT STRUCTURE TO AVOID HIERARCHY MISMATCH
         skeletonData = parseSkeletonText(DEFAULT_SKELETON_TXT); 
         buildSkeletonVisuals();
         
         updateSkeletonPose(0);
         
-        // Reset Undo
         undoStack = [];
         updateUndoBtn();
         
-        // Redraw timeline
         drawTimeline();
 
         log(`Parse Successful! Loaded ${result.frames.length} frames.`, "suc");
@@ -304,9 +558,8 @@ function reparseCurrentBuffer() {
 function parseAnimationData(buffer) {
     const view = new DataView(buffer);
     let offset = parseInt(document.getElementById('offset-input').value) || 0;
-    // const scaleFactor = parseFloat(document.getElementById('scale-factor-input').value) || 100000.0; // REMOVED
     
-    const metadata = { header: 0n, garbageSize: 0, garbageData: null, boneCount: 0, boneIds: [], remainingData: null, headerOffset: offset };
+    const metadata = { header: 0n, garbageSize: 0, garbageData: null, boneCount: 0, boneIds: [], remainingData: null, headerOffset: offset, animationDataBytes: null, framesLength: 0 };
 
     if (view.byteLength < offset + 14) throw new Error("File too short.");
 
@@ -320,6 +573,7 @@ function parseAnimationData(buffer) {
     }
 
     let framesLength = view.getUint32(readPtr, true);
+    metadata.framesLength = framesLength;
     readPtr += 4;
     
     const boneCount = view.getUint16(readPtr, true);
@@ -330,29 +584,37 @@ function parseAnimationData(buffer) {
         metadata.boneIds.push(view.getUint16(readPtr, true));
         readPtr += 2;
     }
+    
+    // Store the raw animation data bytes for the BinaryModder operations
+    const animStart = readPtr;
+    const frameSize = boneCount * 12;
+    const animEnd = animStart + framesLength * frameSize;
+    metadata.animationDataBytes = buffer.slice(animStart, animEnd);
 
     const frames = [];
-    const frameSize = boneCount * 12;
+    let animPtr = animStart;
 
     for (let f = 0; f < framesLength; f++) {
-        if (readPtr + frameSize > buffer.byteLength) break;
+        if (animPtr + frameSize > buffer.byteLength) break;
         const frameData = {}; 
         for (let b = 0; b < boneCount; b++) {
-            // FIX: Removed scaleFactor and littleEndian, relying on the new Float16 reader
-            const posX = readFloat16(view, readPtr);
-            const posY = readFloat16(view, readPtr + 2);
-            const posZ = readFloat16(view, readPtr + 4);
-            const rotBytes = buffer.slice(readPtr + 6, readPtr + 12);
+            // FIX: Uses Float16 reader
+            const posX = readFloat16(view, animPtr);
+            const posY = readFloat16(view, animPtr + 2);
+            const posZ = readFloat16(view, animPtr + 4);
+            
+            const rotBytes = buffer.slice(animPtr + 6, animPtr + 12);
             const boneId = metadata.boneIds[b];
             
             const vec = new THREE.Vector3(posX, posY, posZ);
             vec.userData = { rotBytes: new Uint8Array(rotBytes) };
-            // Animation offsets are stored in frameData by boneId
             frameData[boneId] = vec;
-            readPtr += 12;
+            animPtr += 12;
         }
         frames.push(frameData);
     }
+    readPtr = animPtr;
+    
     if(readPtr < buffer.byteLength) metadata.remainingData = buffer.slice(readPtr);
     return { frames, metadata };
 }
@@ -424,7 +686,6 @@ function onWindowResize() {
     resizeTimeline();
 }
 
-// Raycasting for Edit Mode
 const raycaster = new THREE.Raycaster();
 const mouse = new THREE.Vector2();
 
@@ -457,12 +718,9 @@ function deselectNode() {
     boneMeshes.forEach(n => n.material.color.setHex(0x00ff00));
 }
 
-
-// **REVISED HIERARCHY PARSING (FLAT STRUCTURE + T-POSE CENTER CALCULATION)**
 function parseSkeletonText(txt) {
     const lines = txt.split('\n');
     const skel = [];
-    const globalPositions = []; 
     let minX = Infinity, minY = Infinity, minZ = Infinity;
     let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
 
@@ -476,7 +734,6 @@ function parseSkeletonText(txt) {
             const globalPos = new THREE.Vector3(parseFloat(posMatch[1]), parseFloat(posMatch[2]), parseFloat(posMatch[3]));
             const boneId = Object.entries(BONE_MAP).find(([id, val]) => val === name)?.[0];
             
-            // Bounding Box Calculation
             minX = Math.min(minX, globalPos.x); maxX = Math.max(maxX, globalPos.x);
             minY = Math.min(minY, globalPos.y); maxY = Math.max(maxY, globalPos.y);
             minZ = Math.min(minZ, globalPos.z); maxZ = Math.max(maxZ, globalPos.z);
@@ -484,16 +741,14 @@ function parseSkeletonText(txt) {
             const node = {
                 name: name,
                 boneId: boneId ? parseInt(boneId) : -1,
-                parentIndex: -1, // Flat structure: No hierarchy during parsing
+                parentIndex: -1,
                 initialGlobalPos: globalPos.clone()
             };
             
             skel.push(node);
-            globalPositions.push(globalPos);
         }
     });
 
-    // Calculate T-Pose Center (midpoint of the bounding box)
     T_POSE_CENTER_OFFSET = new THREE.Vector3(
         (minX + maxX) / 2, 
         (minY + maxY) / 2, 
@@ -501,12 +756,10 @@ function parseSkeletonText(txt) {
     );
     log(`T-Pose Center Calculated: (${T_POSE_CENTER_OFFSET.x.toFixed(2)}, ${T_POSE_CENTER_OFFSET.y.toFixed(2)}, ${T_POSE_CENTER_OFFSET.z.toFixed(2)})`, "info");
     
-    // Re-calculate InitialLocalPos (T-Pose position relative to the calculated center)
     skel.forEach(bone => {
         bone.initialLocalPos = bone.initialGlobalPos.clone().sub(T_POSE_CENTER_OFFSET);
     });
     
-    // Re-establish hierarchy based on the text file's structure *for lines only*
     let tempStack = [];
     lines.forEach(line => {
         if(!line.trim()) return;
@@ -530,7 +783,6 @@ function parseSkeletonText(txt) {
     return skel;
 }
 
-// **REVISED VISUALS BUILDING (FLAT STRUCTURE)**
 function buildSkeletonVisuals() {
     boneObjects.forEach(obj => { if (obj.parent) obj.parent.remove(obj); });
     boneMeshes.forEach(mesh => scene.remove(mesh));
@@ -546,35 +798,30 @@ function buildSkeletonVisuals() {
 
     const root = new THREE.Object3D();
     root.name = "SkeletonRoot";
-    // Set the root to the T-Pose Center. All subsequent bone positions are relative to this.
     root.position.copy(T_POSE_CENTER_OFFSET);
     scene.add(root);
 
     skeletonData.forEach((bone, i) => {
-        // 1. Create the Hierarchy Object (Object3D) - flat for now, positioned by T-Pose local pos
         const boneObj = new THREE.Object3D();
         boneObj.name = bone.name;
         boneObj.position.copy(bone.initialLocalPos); 
         boneObj.userData = { ...bone }; 
         boneObjects.push(boneObj);
 
-        // 2. Establish Parenting - simplified to flat structure for translation, but attached to root
         root.add(boneObj);
         
-        // 3. Create the Visualization Mesh (Sphere)
         const mesh = new THREE.Mesh(geo, mat.clone()); 
         mesh.userData.boneId = bone.boneId;
         mesh.userData.boneObject = boneObj; 
         boneObj.add(mesh); 
         boneMeshes.push(mesh);
         
-        // 4. Create Visualization Lines (Using the parsed hierarchy for visualization only)
         if(bone.parentIndex !== -1) {
             const parentObj = boneObjects[bone.parentIndex];
             const lineGeo = new THREE.BufferGeometry().setFromPoints([parentObj.position, boneObj.position]);
             const line = new THREE.Line(lineGeo, lineMat);
             line.userData = { parentObj: parentObj, childObj: boneObj };
-            root.add(line); // Add lines to the root, which is centered
+            root.add(line); 
             skeletonLines.push(line);
         }
     });
@@ -584,10 +831,8 @@ function updateBoneFromTransform(boneObj) {
     if(!animationFrames[currentFrame]) return;
     const id = boneObj.userData.boneId;
     
-    // Calculate the new local position relative to the T-Pose center (root)
     const newPosRelativeToCenter = boneObj.position.clone();
     
-    // The animation offset should be the difference between the current frame's position and the T-Pose local position.
     const initialLocalPos = boneObj.userData.initialLocalPos.clone();
     const newAnimOffset = newPosRelativeToCenter.sub(initialLocalPos);
     
@@ -597,8 +842,6 @@ function updateBoneFromTransform(boneObj) {
     animationFrames[currentFrame][id] = newAnimOffset;
 }
 
-
-// **REVISED UPDATE POSE (FLAT STRUCTURE)**
 function updateSkeletonPose(frameIdx) {
     if(!animationFrames[frameIdx]) return;
     const frameData = animationFrames[frameIdx];
@@ -612,12 +855,9 @@ function updateSkeletonPose(frameIdx) {
         let finalLocalPos = initialLocalPos;
         
         if(frameData[id]) {
-            // Apply the animation offset (local translation)
-            // Animation is defined as the offset from the T-Pose center
             finalLocalPos.add(frameData[id]);
         }
         
-        // Set the Object3D's local position (relative to the T_POSE_CENTER_OFFSET root)
         boneObj.position.copy(finalLocalPos);
     });
     
@@ -626,20 +866,16 @@ function updateSkeletonPose(frameIdx) {
 }
 
 function updateLines() {
-    // Lines are children of the root and follow boneObj positions which are relative to the root.
-    // No need for complex world matrix transforms, just update vertices based on boneObj.position.
     skeletonLines.forEach(line => {
         const pObj = line.userData.parentObj;
         const cObj = line.userData.childObj;
         
         const pos = line.geometry.attributes.position.array;
         
-        // Parent bone position
         pos[0]=pObj.position.x; 
         pos[1]=pObj.position.y; 
         pos[2]=pObj.position.z;
         
-        // Child bone position
         pos[3]=cObj.position.x; 
         pos[4]=cObj.position.y; 
         pos[5]=cObj.position.z;
@@ -668,7 +904,7 @@ function animate(time) {
 }
 
 // ==========================================
-// 4. TIMELINE LOGIC (CANVAS) - No Change
+// 4. TIMELINE LOGIC (CANVAS)
 // ==========================================
 function initTimeline() {
     tlCanvas = document.getElementById('timeline-canvas');
@@ -802,7 +1038,7 @@ function updateUIForFrame(f) {
 }
 
 // ==========================================
-// 5. APP LOGIC - REVISED RECONSTRUCT BINARY
+// 5. APP LOGIC
 // ==========================================
 function toggleEditMode() {
     isEditMode = !isEditMode;
@@ -877,9 +1113,6 @@ function exportBytes() {
 }
 
 function reconstructBinary() {
-    // const SCALE_FACTOR = parseFloat(document.getElementById('scale-factor-input').value) || 100000.0; // REMOVED
-    // const EXPORT_MULTIPLIER = parseFloat(document.getElementById('export-multiplier-input').value) || 1.0; // REMOVED
-    
     const headerSize = 8;
     const garbageLenSize = 2;
     const garbageDataSize = fileMetadata.garbageSize * 8;
@@ -974,7 +1207,6 @@ function setupUI() {
     document.getElementById('tick-btn').addEventListener('click', saveProgress);
     document.getElementById('export-btn').addEventListener('click', exportBytes);
     
-    // Listeners for the removed inputs are also removed.
     document.getElementById('offset-input').addEventListener('change', reparseCurrentBuffer);
 }
 
