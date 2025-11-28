@@ -29,29 +29,26 @@
             flex-direction: column; 
             padding: 10px;
             z-index: 20;
-            transition: margin-left 0.3s ease, min-width 0.3s ease; /* Use margin to push content */
+            transition: margin-left 0.3s ease, min-width 0.3s ease; 
             height: 100%; 
             overflow-y: auto; 
-            /* Fix 2: Start with margin-left: 0 when open */
             margin-left: 0; 
-            position: relative; /* Needs position for the margin trick to work cleanly */
+            position: relative; 
         }
 
-        /* Fix 2: Collapse by moving the sidebar entirely out of the flow using negative margin */
         #sidebar.collapsed {
             margin-left: -360px; 
             min-width: 0;
             width: 0;
-            padding: 0; /* Remove padding when collapsed */
+            padding: 0;
             border-right: none;
         }
 
         /* Toggle Button */
         #sidebar-toggle {
-            /* Fix 2: This button must now be positioned relative to the sidebar's edge */
             position: absolute; 
             top: 50%;
-            right: -24px; /* Sticks to the right edge of the 360px sidebar */
+            right: -24px; 
             transform: translateY(-50%);
             width: 24px;
             height: 48px;
@@ -66,32 +63,30 @@
             color: #81d4fa;
             font-size: 12px;
             z-index: 21;
-            transition: right 0.3s ease, margin-left 0.3s ease;
+            transition: left 0.3s ease, margin-left 0.3s ease;
         }
         #sidebar-toggle:hover { background: #2a2a2a; color: white; }
         
-        /* Fix 2: Move button to the left edge of the screen when sidebar is collapsed */
         #sidebar.collapsed #sidebar-toggle {
-            right: -24px; /* Stays at the edge of the collapsed 0-width sidebar */
-            position: fixed; /* Switch to fixed position relative to viewport */
+            right: -24px; 
+            position: fixed; 
             left: 0;
             transform: translateY(-50%);
         }
 
         /* Right: Main Content (Canvas + Timeline) */
         #main-content {
-            /* Fix 2: Takes all remaining space */
             flex-grow: 1;
             display: flex;
             flex-direction: column;
             position: relative;
             background: #000;
-            min-width: 0; /* Ensures it shrinks correctly in flex layout */
+            min-width: 0;
         }
 
         /* 3D Viewport */
         #canvas-wrapper {
-            flex-grow: 1; /* Takes all available height above timeline */
+            flex-grow: 1; 
             position: relative;
             background: radial-gradient(circle at center, #1a1a1a 0%, #000000 100%);
             overflow: hidden;
@@ -100,7 +95,7 @@
 
         /* Timeline Footer */
         #timeline-wrapper {
-            height: 140px; /* Fixed height for editor feel */
+            height: 140px; 
             min-height: 140px;
             background: #181818;
             border-top: 1px solid #333;
@@ -114,17 +109,14 @@
             height: 36px;
             background: #252525;
             display: flex;
-            /* Fix 3: Center align content */
             align-items: center;
-            /* Fix 3: Use justify-content for centering/spacing */
             justify-content: center; 
             padding: 0 10px;
             gap: 15px;
             border-bottom: 1px solid #333;
-            position: relative; /* For absolute positioning of time display */
+            position: relative; 
         }
 
-        /* Fix 3: Place time display on the right edge */
         #time-display { 
             position: absolute;
             right: 15px;
@@ -230,8 +222,12 @@
         <div class="panel">
             <h3>3. Settings</h3>
             <div class="control-group">
-                <label>Pos Scale:</label>
-                <input type="number" id="scale-factor-input" value="100000.0" step="100.0">
+                <label>Pos Scale (Read):</label>
+                <input type="number" id="scale-factor-input" value="310.0" step="1.0">
+            </div>
+            <div class="control-group">
+                <label>Export Multiplier (Write):</label>
+                <input type="number" id="export-multiplier-input" value="1.0" step="0.1">
             </div>
             <div class="control-group">
                 <label>Header Offset:</label>
@@ -343,7 +339,9 @@ const DEFAULT_SKELETON_TXT = `
 `;
 
 let scene, camera, renderer, controls, transformControl;
-let skeletonNodes = [], skeletonLines = [];
+let boneMeshes = []; // Meshes for visualization (spheres)
+let skeletonLines = []; // Lines for visualization (bones)
+let boneObjects = []; // The actual THREE.Object3D hierarchy nodes
 let animationFrames = [];
 let fileMetadata = {}; 
 let isPlaying = false;
@@ -373,19 +371,25 @@ function log(msg, type="info") {
     d.scrollTop = d.scrollHeight;
 }
 
+// Function to read Float16 data from file and convert to 3D Viewer float
 function readFloat16(view, offset, littleEndian, scale) {
     if(offset + 2 > view.byteLength) return 0;
     const shortValue = view.getInt16(offset, littleEndian);
     return shortValue / scale;
 }
 
-function float32ToFloat16(value) {
-    const SCALE_FACTOR = parseFloat(document.getElementById('scale-factor-input').value) || 100000.0;
-    let intVal = Math.round(value * SCALE_FACTOR);
+// Function to convert 3D Viewer float to raw Int16 data for EXPORT
+function float32ToRawInt16(value, scaleFactor, exportMultiplier) {
+    const multipliedValue = value * exportMultiplier;
+    
+    let intVal = Math.round(multipliedValue * scaleFactor);
+
     if(intVal > 32767) intVal = 32767;
     if(intVal < -32768) intVal = -32768;
+    
     return intVal;
 }
+
 
 let rawBuffer = null;
 
@@ -397,6 +401,11 @@ function reparseCurrentBuffer() {
         fileMetadata = result.metadata;
         
         currentFrame = 0;
+        
+        // REBUILD SKELETON WITH NEW SCALE FACTOR and HIERARCHY
+        skeletonData = parseSkeletonText(DEFAULT_SKELETON_TXT); 
+        buildSkeletonVisuals();
+        
         updateSkeletonPose(0);
         
         // Reset Undo
@@ -415,15 +424,14 @@ function reparseCurrentBuffer() {
 function parseAnimationData(buffer) {
     const view = new DataView(buffer);
     let offset = parseInt(document.getElementById('offset-input').value) || 0;
-    const scaleFactor = parseFloat(document.getElementById('scale-factor-input').value) || 100000.0;
+    const scaleFactor = parseFloat(document.getElementById('scale-factor-input').value) || 310.0;
     
-    // Simple metadata object
     const metadata = { header: 0n, garbageSize: 0, garbageData: null, boneCount: 0, boneIds: [], remainingData: null, headerOffset: offset };
 
     if (view.byteLength < offset + 14) throw new Error("File too short.");
 
-    let readPtr = offset + 8; // Skip header
-    const garbageSize = view.getInt16(readPtr, true); // Assume little endian default for web
+    let readPtr = offset + 8;
+    const garbageSize = view.getInt16(readPtr, true);
     metadata.garbageSize = garbageSize;
     readPtr += 2;
     if(garbageSize > 0) {
@@ -450,6 +458,7 @@ function parseAnimationData(buffer) {
         if (readPtr + frameSize > buffer.byteLength) break;
         const frameData = {}; 
         for (let b = 0; b < boneCount; b++) {
+            // readFloat16 correctly uses only the scaleFactor for reading
             const posX = readFloat16(view, readPtr, true, scaleFactor);
             const posY = readFloat16(view, readPtr + 2, true, scaleFactor);
             const posZ = readFloat16(view, readPtr + 4, true, scaleFactor);
@@ -458,6 +467,7 @@ function parseAnimationData(buffer) {
             
             const vec = new THREE.Vector3(posX, posY, posZ);
             vec.userData = { rotBytes: new Uint8Array(rotBytes) };
+            // Animation offsets are stored in frameData by boneId
             frameData[boneId] = vec;
             readPtr += 12;
         }
@@ -468,7 +478,7 @@ function parseAnimationData(buffer) {
 }
 
 // ==========================================
-// 3. 3D VIEWER
+// 3. 3D VIEWER (Hierarchy Fix)
 // ==========================================
 function initViewer() {
     const container = document.getElementById('canvas-container');
@@ -476,7 +486,7 @@ function initViewer() {
     const height = container.clientHeight;
 
     scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x111111); // Fallback color
+    scene.background = new THREE.Color(0x111111); 
 
     camera = new THREE.PerspectiveCamera(60, width / height, 0.1, 1000);
     camera.position.set(0, 100, 400); 
@@ -526,7 +536,6 @@ function onWindowResize() {
     const w = wrapper.clientWidth;
     const h = wrapper.clientHeight;
     
-    // Fix 1: Update camera aspect ratio immediately when the canvas size changes
     camera.aspect = w / h; 
     camera.updateProjectionMatrix();
     
@@ -546,117 +555,191 @@ document.getElementById('canvas-container').addEventListener('pointerdown', (eve
     mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
     
     raycaster.setFromCamera(mouse, camera);
-    const intersects = raycaster.intersectObjects(skeletonNodes);
+    const intersects = raycaster.intersectObjects(boneMeshes); // Check visualization meshes
 
     if (intersects.length > 0) {
-        selectNode(intersects[0].object);
+        // Select the actual hierarchy object (boneObject) associated with the mesh
+        const boneObject = intersects[0].object.userData.boneObject;
+        if (boneObject) selectNode(boneObject);
     } else if (!transformControl.dragging) {
         deselectNode();
     }
 });
 
-function selectNode(mesh) {
-    skeletonNodes.forEach(n => n.material.color.setHex(0x00ff00));
-    mesh.material.color.setHex(0x0088ff); 
-    transformControl.attach(mesh);
+function selectNode(boneObject) {
+    // Highlight the associated visualization mesh
+    boneMeshes.forEach(n => n.material.color.setHex(0x00ff00));
+    const meshToHighlight = boneMeshes.find(m => m.userData.boneId === boneObject.userData.boneId);
+    if(meshToHighlight) meshToHighlight.material.color.setHex(0x0088ff); 
+    
+    transformControl.attach(boneObject);
 }
 function deselectNode() {
     transformControl.detach();
-    skeletonNodes.forEach(n => n.material.color.setHex(0x00ff00));
+    boneMeshes.forEach(n => n.material.color.setHex(0x00ff00));
 }
 
+
+// **REVISED HIERARCHY PARSING**
 function parseSkeletonText(txt) {
     const lines = txt.split('\n');
     const skel = [];
     let stack = [];
+    const globalPositions = []; 
+
     lines.forEach(line => {
         if(!line.trim()) return;
         const indent = line.match(/^(\s*)/)[1].length / 2;
         const nameMatch = line.match(/"([^"]+)"/);
         const posMatch = line.match(/G\.Pos:\(([^,]+),\s*([^,]+),\s*([^)]+)\)/);
+        
         if(nameMatch && posMatch) {
             const name = nameMatch[1];
-            const node = {
-                name: name,
-                initialPos: new THREE.Vector3(parseFloat(posMatch[1]), parseFloat(posMatch[2]), parseFloat(posMatch[3])),
-                parentIndex: -1,
-                boneId: -1
-            };
-            for(const [id, val] of Object.entries(BONE_MAP)) if(val === name) { node.boneId = parseInt(id); break; }
+            const globalPos = new THREE.Vector3(parseFloat(posMatch[1]), parseFloat(posMatch[2]), parseFloat(posMatch[3]));
+            const boneId = Object.entries(BONE_MAP).find(([id, val]) => val === name)?.[0];
+            
+            let parentIndex = -1;
             if(indent > 0) {
                 while(stack.length > indent) stack.pop();
-                if(stack.length > 0) node.parentIndex = stack[stack.length-1];
+                if(stack.length > 0) parentIndex = stack[stack.length-1];
             } else stack = [];
+            
+            const parentGlobalPos = parentIndex === -1 ? new THREE.Vector3(0, 0, 0) : globalPositions[parentIndex];
+            
+            // Convert Global T-Pose position to Local T-Pose position
+            const localPos = globalPos.clone().sub(parentGlobalPos);
+            
+            const node = {
+                name: name,
+                boneId: boneId ? parseInt(boneId) : -1,
+                parentIndex: parentIndex,
+                initialLocalPos: localPos.clone(),
+                initialGlobalPos: globalPos.clone()
+            };
+            
             skel.push(node);
-            stack.push(skel.length-1);
+            globalPositions.push(globalPos);
+            stack.push(skel.length - 1);
         }
     });
     return skel;
 }
 
+// **REVISED VISUALS BUILDING**
 function buildSkeletonVisuals() {
-    skeletonNodes.forEach(n => scene.remove(n));
-    skeletonLines.forEach(l => scene.remove(l));
-    skeletonNodes = []; skeletonLines = [];
+    // Clear old elements from the scene
+    boneObjects.forEach(obj => { if (obj.parent) obj.parent.remove(obj); });
+    boneMeshes.forEach(mesh => scene.remove(mesh));
+    skeletonLines.forEach(line => scene.remove(line));
+
+    boneMeshes = []; 
+    boneObjects = [];
+    skeletonLines = [];
+    
     const geo = new THREE.SphereGeometry(2.0, 8, 8);
     const mat = new THREE.MeshBasicMaterial({ color: 0x00ff00 }); 
     const lineMat = new THREE.LineBasicMaterial({ color: 0xcccccc, transparent: true, opacity: 0.8 }); 
 
-    skeletonData.forEach((bone, i) => {
-        const mesh = new THREE.Mesh(geo, mat.clone()); 
-        mesh.position.copy(bone.initialPos);
-        mesh.userData = { ...bone, originalPos: bone.initialPos.clone() };
-        scene.add(mesh);
-        skeletonNodes.push(mesh);
+    const root = new THREE.Object3D();
+    root.name = "SkeletonRoot";
+    scene.add(root);
 
+    skeletonData.forEach((bone, i) => {
+        // 1. Create the Hierarchy Object (Object3D)
+        const boneObj = new THREE.Object3D();
+        boneObj.name = bone.name;
+        boneObj.position.copy(bone.initialLocalPos); // Set to T-Pose Local Position
+        boneObj.userData = { ...bone }; // Store T-Pose data and ID
+        boneObjects.push(boneObj);
+
+        // 2. Establish Parenting
+        if (bone.parentIndex !== -1) {
+            boneObjects[bone.parentIndex].add(boneObj);
+        } else {
+            root.add(boneObj); // Root bone (pelvis) added to world root
+        }
+        
+        // 3. Create the Visualization Mesh (Sphere)
+        const mesh = new THREE.Mesh(geo, mat.clone()); 
+        mesh.userData.boneId = bone.boneId;
+        mesh.userData.boneObject = boneObj; // Link mesh back to the hierarchy object
+        boneObj.add(mesh); // Add mesh to the bone object
+        boneMeshes.push(mesh);
+        
+        // 4. Create Visualization Lines (Requires updating in the animate loop)
         if(bone.parentIndex !== -1) {
-            const lineGeo = new THREE.BufferGeometry().setFromPoints([skeletonNodes[bone.parentIndex].position, mesh.position]);
+            const parentObj = boneObjects[bone.parentIndex];
+            // Lines are created in world space but updated every frame to follow boneObj positions
+            const lineGeo = new THREE.BufferGeometry().setFromPoints([parentObj.position, boneObj.position]);
             const line = new THREE.Line(lineGeo, lineMat);
-            line.userData = { parent: bone.parentIndex, child: i };
+            line.userData = { parentObj: parentObj, childObj: boneObj };
             scene.add(line);
             skeletonLines.push(line);
         }
     });
 }
 
-function updateBoneFromTransform(mesh) {
+// **REVISED UPDATE POSE**
+function updateBoneFromTransform(boneObj) {
+    // This runs when the gizmo is dragged. boneObj is the Object3D node.
     if(!animationFrames[currentFrame]) return;
-    const id = mesh.userData.boneId;
-    const currentWorldPos = mesh.position.clone();
-    const tPosePos = mesh.userData.originalPos.clone();
-    const rootData = animationFrames[currentFrame][0];
-    const globalOffset = rootData ? rootData.clone() : new THREE.Vector3(0,0,0);
+    const id = boneObj.userData.boneId;
+    const initialLocalPos = boneObj.userData.initialLocalPos.clone();
     
-    let newAnimVec;
-    if (id === 0) newAnimVec = currentWorldPos.clone().sub(tPosePos);
-    else newAnimVec = currentWorldPos.clone().sub(tPosePos).sub(globalOffset);
-
+    // The boneObj.position is the *current* local position.
+    // The animation offset is the difference between the current local pos and the initial T-Pose local pos.
+    const newAnimOffset = boneObj.position.clone().sub(initialLocalPos);
+    
     const existing = animationFrames[currentFrame][id];
-    if(existing && existing.userData.rotBytes) newAnimVec.userData = { rotBytes: existing.userData.rotBytes };
+    if(existing && existing.userData.rotBytes) newAnimOffset.userData = { rotBytes: existing.userData.rotBytes };
 
-    animationFrames[currentFrame][id] = newAnimVec;
-    if (id === 0) updateSkeletonPose(currentFrame); else updateLines();
+    // Update the in-memory frame data with the new local offset
+    animationFrames[currentFrame][id] = newAnimOffset;
 }
 
+
+// **REVISED UPDATE POSE**
 function updateSkeletonPose(frameIdx) {
     if(!animationFrames[frameIdx]) return;
     const frameData = animationFrames[frameIdx];
-    const globalOffset = frameData[0] ? frameData[0].clone() : new THREE.Vector3();
-    skeletonNodes.forEach(node => {
-        if(transformControl.object === node && transformControl.dragging) return;
-        const id = node.userData.boneId;
-        const pos = node.userData.originalPos.clone();
-        if(frameData[id]) pos.add(frameData[id]);
-        if(id !== 0) pos.add(globalOffset); 
-        node.position.copy(pos);
+
+    boneObjects.forEach(boneObj => {
+        const id = boneObj.userData.boneId;
+        const initialLocalPos = boneObj.userData.initialLocalPos.clone();
+        
+        // Skip updating the object being currently dragged to prevent jitter
+        if(transformControl.object === boneObj && transformControl.dragging) return;
+        
+        let newLocalPos = initialLocalPos;
+        
+        // Apply the animation offset (local translation)
+        if(frameData[id]) {
+            newLocalPos.add(frameData[id]);
+        }
+        
+        // Set the Object3D's local position
+        boneObj.position.copy(newLocalPos);
     });
+    
+    // This forces the world matrices of all bones to be updated
+    scene.updateMatrixWorld(true);
     updateLines();
 }
 
 function updateLines() {
+    // Update lines to connect the current world positions of the bone visualization meshes
     skeletonLines.forEach(line => {
-        const p = skeletonNodes[line.userData.parent].position;
-        const c = skeletonNodes[line.userData.child].position;
+        const pObj = line.userData.parentObj;
+        const cObj = line.userData.childObj;
+        
+        // Get the boneObjects' world positions
+        pObj.updateWorldMatrix(true, false);
+        cObj.updateWorldMatrix(true, false);
+        
+        const p = pObj.getWorldPosition(new THREE.Vector3());
+        const c = cObj.getWorldPosition(new THREE.Vector3());
+        
+        // Update the line's geometry positions
         const pos = line.geometry.attributes.position.array;
         pos[0]=p.x; pos[1]=p.y; pos[2]=p.z;
         pos[3]=c.x; pos[4]=c.y; pos[5]=c.z;
@@ -674,7 +757,11 @@ function animate(time) {
             lastTime = time;
         }
     } else {
-        if(isEditMode) updateLines();
+        // In Edit mode, constantly update lines to follow the Gizmo-moved boneObj
+        if(isEditMode) {
+             scene.updateMatrixWorld(true);
+             updateLines();
+        }
     }
     renderer.render(scene, camera);
 }
@@ -720,10 +807,6 @@ function drawTimeline() {
     
     if(totalFrames === 0) return;
 
-    // Center the current frame? Or standard scroll? 
-    // Let's keep it simple: timeline starts at tlScrollX
-    // But we want to auto-scroll if playing
-    
     // Ruler Background
     tlCtx.fillStyle = '#252525';
     tlCtx.fillRect(0, 0, w, 25);
@@ -878,7 +961,8 @@ function performUndo() {
     animationFrames[action.frameIndex] = action.data;
     if(currentFrame === action.frameIndex) {
         updateSkeletonPose(currentFrame);
-        if(transformControl.object) transformControl.attach(transformControl.object);
+        // Re-attach gizmo to update transform controls if the selected bone was affected
+        if(transformControl.object) transformControl.attach(transformControl.object); 
     }
     updateUndoBtn();
     log("Undo performed.", "info");
@@ -911,6 +995,10 @@ function exportBytes() {
 }
 
 function reconstructBinary() {
+    // Read the current settings for export
+    const SCALE_FACTOR = parseFloat(document.getElementById('scale-factor-input').value) || 310.0;
+    const EXPORT_MULTIPLIER = parseFloat(document.getElementById('export-multiplier-input').value) || 1.0;
+    
     // Rebuild logic
     const headerSize = 8;
     const garbageLenSize = 2;
@@ -945,11 +1033,16 @@ function reconstructBinary() {
     animationFrames.forEach(frame => {
         fileMetadata.boneIds.forEach(id => {
             const vec = frame[id]; 
-            const x = vec ? vec.x : 0; const y = vec ? vec.y : 0; const z = vec ? vec.z : 0;
-            view.setInt16(ptr, float32ToFloat16(x), true);
-            view.setInt16(ptr+2, float32ToFloat16(y), true);
-            view.setInt16(ptr+4, float32ToFloat16(z), true);
+            const x = vec ? vec.x : 0; 
+            const y = vec ? vec.y : 0; 
+            const z = vec ? vec.z : 0;
+            
+            // Use the clean function for conversion and apply the multiplier
+            view.setInt16(ptr, float32ToRawInt16(x, SCALE_FACTOR, EXPORT_MULTIPLIER), true);
+            view.setInt16(ptr+2, float32ToRawInt16(y, SCALE_FACTOR, EXPORT_MULTIPLIER), true);
+            view.setInt16(ptr+4, float32ToRawInt16(z, SCALE_FACTOR, EXPORT_MULTIPLIER), true);
             ptr += 6;
+            
             if(vec && vec.userData.rotBytes) new Uint8Array(buffer).set(vec.userData.rotBytes, ptr);
             else for(let k=0; k<6; k++) view.setUint8(ptr+k, 0);
             ptr += 6;
@@ -993,8 +1086,6 @@ function setupUI() {
         const btn = document.getElementById('sidebar-toggle');
         btn.innerText = sidebar.classList.contains('collapsed') ? "▶" : "◀";
         
-        // Fix 1 & 2: Ensure the 3D viewer and camera resize immediately after the sidebar animation
-        // We use a timeout to give the CSS transition time to complete
         setTimeout(onWindowResize, 350); 
     });
 
@@ -1002,6 +1093,10 @@ function setupUI() {
     document.getElementById('undo-btn').addEventListener('click', performUndo);
     document.getElementById('tick-btn').addEventListener('click', saveProgress);
     document.getElementById('export-btn').addEventListener('click', exportBytes);
+    
+    // Re-load data if settings are changed
+    document.getElementById('scale-factor-input').addEventListener('change', reparseCurrentBuffer);
+    document.getElementById('offset-input').addEventListener('change', reparseCurrentBuffer);
 }
 
 document.addEventListener('DOMContentLoaded', initViewer);
