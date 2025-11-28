@@ -369,27 +369,25 @@ function log(msg, type="info") {
     d.scrollTop = d.scrollHeight;
 }
 
+// Function to read Float16 data from file and convert to 3D Viewer float
 function readFloat16(view, offset, littleEndian, scale) {
     if(offset + 2 > view.byteLength) return 0;
     const shortValue = view.getInt16(offset, littleEndian);
     return shortValue / scale;
 }
 
-// ✅ UPDATED FUNCTION: Applies Export Multiplier to the value before scaling to Int16
-function float32ToFloat16(value) {
-    const SCALE_FACTOR = parseFloat(document.getElementById('scale-factor-input').value) || 100000.0;
-    const EXPORT_MULTIPLIER = parseFloat(document.getElementById('export-multiplier-input').value) || 20.0;
-
-    // Apply the multiplier to the position value (x, y, or z)
-    const multipliedValue = value * EXPORT_MULTIPLIER;
+// Function to convert 3D Viewer float to raw Int16 data for EXPORT
+function float32ToRawInt16(value, scaleFactor, exportMultiplier) {
+    const multipliedValue = value * exportMultiplier;
     
-    let intVal = Math.round(multipliedValue * SCALE_FACTOR);
+    let intVal = Math.round(multipliedValue * scaleFactor);
 
     if(intVal > 32767) intVal = 32767;
     if(intVal < -32768) intVal = -32768;
     
     return intVal;
 }
+
 
 let rawBuffer = null;
 
@@ -419,16 +417,14 @@ function reparseCurrentBuffer() {
 function parseAnimationData(buffer) {
     const view = new DataView(buffer);
     let offset = parseInt(document.getElementById('offset-input').value) || 0;
-    // Scale factor is only used here for reading
     const scaleFactor = parseFloat(document.getElementById('scale-factor-input').value) || 100000.0;
     
-    // Simple metadata object
     const metadata = { header: 0n, garbageSize: 0, garbageData: null, boneCount: 0, boneIds: [], remainingData: null, headerOffset: offset };
 
     if (view.byteLength < offset + 14) throw new Error("File too short.");
 
-    let readPtr = offset + 8; // Skip header
-    const garbageSize = view.getInt16(readPtr, true); // Assume little endian default for web
+    let readPtr = offset + 8;
+    const garbageSize = view.getInt16(readPtr, true);
     metadata.garbageSize = garbageSize;
     readPtr += 2;
     if(garbageSize > 0) {
@@ -455,7 +451,7 @@ function parseAnimationData(buffer) {
         if (readPtr + frameSize > buffer.byteLength) break;
         const frameData = {}; 
         for (let b = 0; b < boneCount; b++) {
-            // readFloat16 uses the scaleFactor
+            // readFloat16 correctly uses only the scaleFactor for reading
             const posX = readFloat16(view, readPtr, true, scaleFactor);
             const posY = readFloat16(view, readPtr + 2, true, scaleFactor);
             const posZ = readFloat16(view, readPtr + 4, true, scaleFactor);
@@ -625,6 +621,8 @@ function buildSkeletonVisuals() {
 }
 
 function updateBoneFromTransform(mesh) {
+    // This is the function that runs when you drag the gizmo.
+    // It correctly updates the in-memory animationFrames with the new, un-multiplied offset.
     if(!animationFrames[currentFrame]) return;
     const id = mesh.userData.boneId;
     const currentWorldPos = mesh.position.clone();
@@ -639,6 +637,7 @@ function updateBoneFromTransform(mesh) {
     const existing = animationFrames[currentFrame][id];
     if(existing && existing.userData.rotBytes) newAnimVec.userData = { rotBytes: existing.userData.rotBytes };
 
+    // Update the in-memory frame data directly with the viewer's values (no conversion/multiplier applied)
     animationFrames[currentFrame][id] = newAnimVec;
     if (id === 0) updateSkeletonPose(currentFrame); else updateLines();
 }
@@ -911,8 +910,11 @@ function exportBytes() {
     }
 }
 
-// ✅ UPDATED FUNCTION: Calls the updated float32ToFloat16
 function reconstructBinary() {
+    // Read the current settings for export
+    const SCALE_FACTOR = parseFloat(document.getElementById('scale-factor-input').value) || 100000.0;
+    const EXPORT_MULTIPLIER = parseFloat(document.getElementById('export-multiplier-input').value) || 20.0;
+    
     // Rebuild logic
     const headerSize = 8;
     const garbageLenSize = 2;
@@ -951,10 +953,10 @@ function reconstructBinary() {
             const y = vec ? vec.y : 0; 
             const z = vec ? vec.z : 0;
             
-            // This call now applies the Export Multiplier
-            view.setInt16(ptr, float32ToFloat16(x), true);
-            view.setInt16(ptr+2, float32ToFloat16(y), true);
-            view.setInt16(ptr+4, float32ToFloat16(z), true);
+            // Use the new, clean function for conversion and apply the multiplier
+            view.setInt16(ptr, float32ToRawInt16(x, SCALE_FACTOR, EXPORT_MULTIPLIER), true);
+            view.setInt16(ptr+2, float32ToRawInt16(y, SCALE_FACTOR, EXPORT_MULTIPLIER), true);
+            view.setInt16(ptr+4, float32ToRawInt16(z, SCALE_FACTOR, EXPORT_MULTIPLIER), true);
             ptr += 6;
             
             if(vec && vec.userData.rotBytes) new Uint8Array(buffer).set(vec.userData.rotBytes, ptr);
