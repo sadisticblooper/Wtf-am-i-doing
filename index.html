@@ -29,26 +29,29 @@
             flex-direction: column; 
             padding: 10px;
             z-index: 20;
-            transition: margin-left 0.3s ease, min-width 0.3s ease; 
+            transition: margin-left 0.3s ease, min-width 0.3s ease; /* Use margin to push content */
             height: 100%; 
             overflow-y: auto; 
+            /* Fix 2: Start with margin-left: 0 when open */
             margin-left: 0; 
-            position: relative; 
+            position: relative; /* Needs position for the margin trick to work cleanly */
         }
 
+        /* Fix 2: Collapse by moving the sidebar entirely out of the flow using negative margin */
         #sidebar.collapsed {
             margin-left: -360px; 
             min-width: 0;
             width: 0;
-            padding: 0;
+            padding: 0; /* Remove padding when collapsed */
             border-right: none;
         }
 
         /* Toggle Button */
         #sidebar-toggle {
+            /* Fix 2: This button must now be positioned relative to the sidebar's edge */
             position: absolute; 
             top: 50%;
-            right: -24px; 
+            right: -24px; /* Sticks to the right edge of the 360px sidebar */
             transform: translateY(-50%);
             width: 24px;
             height: 48px;
@@ -63,30 +66,32 @@
             color: #81d4fa;
             font-size: 12px;
             z-index: 21;
-            transition: left 0.3s ease, margin-left 0.3s ease;
+            transition: right 0.3s ease, margin-left 0.3s ease;
         }
         #sidebar-toggle:hover { background: #2a2a2a; color: white; }
         
+        /* Fix 2: Move button to the left edge of the screen when sidebar is collapsed */
         #sidebar.collapsed #sidebar-toggle {
-            right: -24px; 
-            position: fixed; 
+            right: -24px; /* Stays at the edge of the collapsed 0-width sidebar */
+            position: fixed; /* Switch to fixed position relative to viewport */
             left: 0;
             transform: translateY(-50%);
         }
 
         /* Right: Main Content (Canvas + Timeline) */
         #main-content {
+            /* Fix 2: Takes all remaining space */
             flex-grow: 1;
             display: flex;
             flex-direction: column;
             position: relative;
             background: #000;
-            min-width: 0;
+            min-width: 0; /* Ensures it shrinks correctly in flex layout */
         }
 
         /* 3D Viewport */
         #canvas-wrapper {
-            flex-grow: 1; 
+            flex-grow: 1; /* Takes all available height above timeline */
             position: relative;
             background: radial-gradient(circle at center, #1a1a1a 0%, #000000 100%);
             overflow: hidden;
@@ -95,7 +100,7 @@
 
         /* Timeline Footer */
         #timeline-wrapper {
-            height: 140px; 
+            height: 140px; /* Fixed height for editor feel */
             min-height: 140px;
             background: #181818;
             border-top: 1px solid #333;
@@ -109,14 +114,17 @@
             height: 36px;
             background: #252525;
             display: flex;
+            /* Fix 3: Center align content */
             align-items: center;
+            /* Fix 3: Use justify-content for centering/spacing */
             justify-content: center; 
             padding: 0 10px;
             gap: 15px;
             border-bottom: 1px solid #333;
-            position: relative; 
+            position: relative; /* For absolute positioning of time display */
         }
 
+        /* Fix 3: Place time display on the right edge */
         #time-display { 
             position: absolute;
             right: 15px;
@@ -222,12 +230,8 @@
         <div class="panel">
             <h3>3. Settings</h3>
             <div class="control-group">
-                <label>Pos Scale (Read):</label>
+                <label>Pos Scale:</label>
                 <input type="number" id="scale-factor-input" value="100000.0" step="100.0">
-            </div>
-            <div class="control-group">
-                <label>Export Multiplier (Write):</label>
-                <input type="number" id="export-multiplier-input" value="20.0" step="1.0">
             </div>
             <div class="control-group">
                 <label>Header Offset:</label>
@@ -369,25 +373,19 @@ function log(msg, type="info") {
     d.scrollTop = d.scrollHeight;
 }
 
-// Function to read Float16 data from file and convert to 3D Viewer float
 function readFloat16(view, offset, littleEndian, scale) {
     if(offset + 2 > view.byteLength) return 0;
     const shortValue = view.getInt16(offset, littleEndian);
     return shortValue / scale;
 }
 
-// Function to convert 3D Viewer float to raw Int16 data for EXPORT
-function float32ToRawInt16(value, scaleFactor, exportMultiplier) {
-    const multipliedValue = value * exportMultiplier;
-    
-    let intVal = Math.round(multipliedValue * scaleFactor);
-
+function float32ToFloat16(value) {
+    const SCALE_FACTOR = parseFloat(document.getElementById('scale-factor-input').value) || 100000.0;
+    let intVal = Math.round(value * SCALE_FACTOR);
     if(intVal > 32767) intVal = 32767;
     if(intVal < -32768) intVal = -32768;
-    
     return intVal;
 }
-
 
 let rawBuffer = null;
 
@@ -419,12 +417,13 @@ function parseAnimationData(buffer) {
     let offset = parseInt(document.getElementById('offset-input').value) || 0;
     const scaleFactor = parseFloat(document.getElementById('scale-factor-input').value) || 100000.0;
     
+    // Simple metadata object
     const metadata = { header: 0n, garbageSize: 0, garbageData: null, boneCount: 0, boneIds: [], remainingData: null, headerOffset: offset };
 
     if (view.byteLength < offset + 14) throw new Error("File too short.");
 
-    let readPtr = offset + 8;
-    const garbageSize = view.getInt16(readPtr, true);
+    let readPtr = offset + 8; // Skip header
+    const garbageSize = view.getInt16(readPtr, true); // Assume little endian default for web
     metadata.garbageSize = garbageSize;
     readPtr += 2;
     if(garbageSize > 0) {
@@ -451,7 +450,6 @@ function parseAnimationData(buffer) {
         if (readPtr + frameSize > buffer.byteLength) break;
         const frameData = {}; 
         for (let b = 0; b < boneCount; b++) {
-            // readFloat16 correctly uses only the scaleFactor for reading
             const posX = readFloat16(view, readPtr, true, scaleFactor);
             const posY = readFloat16(view, readPtr + 2, true, scaleFactor);
             const posZ = readFloat16(view, readPtr + 4, true, scaleFactor);
@@ -478,7 +476,7 @@ function initViewer() {
     const height = container.clientHeight;
 
     scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x111111); 
+    scene.background = new THREE.Color(0x111111); // Fallback color
 
     camera = new THREE.PerspectiveCamera(60, width / height, 0.1, 1000);
     camera.position.set(0, 100, 400); 
@@ -528,6 +526,7 @@ function onWindowResize() {
     const w = wrapper.clientWidth;
     const h = wrapper.clientHeight;
     
+    // Fix 1: Update camera aspect ratio immediately when the canvas size changes
     camera.aspect = w / h; 
     camera.updateProjectionMatrix();
     
@@ -621,8 +620,6 @@ function buildSkeletonVisuals() {
 }
 
 function updateBoneFromTransform(mesh) {
-    // This is the function that runs when you drag the gizmo.
-    // It correctly updates the in-memory animationFrames with the new, un-multiplied offset.
     if(!animationFrames[currentFrame]) return;
     const id = mesh.userData.boneId;
     const currentWorldPos = mesh.position.clone();
@@ -637,7 +634,6 @@ function updateBoneFromTransform(mesh) {
     const existing = animationFrames[currentFrame][id];
     if(existing && existing.userData.rotBytes) newAnimVec.userData = { rotBytes: existing.userData.rotBytes };
 
-    // Update the in-memory frame data directly with the viewer's values (no conversion/multiplier applied)
     animationFrames[currentFrame][id] = newAnimVec;
     if (id === 0) updateSkeletonPose(currentFrame); else updateLines();
 }
@@ -724,6 +720,10 @@ function drawTimeline() {
     
     if(totalFrames === 0) return;
 
+    // Center the current frame? Or standard scroll? 
+    // Let's keep it simple: timeline starts at tlScrollX
+    // But we want to auto-scroll if playing
+    
     // Ruler Background
     tlCtx.fillStyle = '#252525';
     tlCtx.fillRect(0, 0, w, 25);
@@ -911,10 +911,6 @@ function exportBytes() {
 }
 
 function reconstructBinary() {
-    // Read the current settings for export
-    const SCALE_FACTOR = parseFloat(document.getElementById('scale-factor-input').value) || 100000.0;
-    const EXPORT_MULTIPLIER = parseFloat(document.getElementById('export-multiplier-input').value) || 20.0;
-    
     // Rebuild logic
     const headerSize = 8;
     const garbageLenSize = 2;
@@ -949,16 +945,11 @@ function reconstructBinary() {
     animationFrames.forEach(frame => {
         fileMetadata.boneIds.forEach(id => {
             const vec = frame[id]; 
-            const x = vec ? vec.x : 0; 
-            const y = vec ? vec.y : 0; 
-            const z = vec ? vec.z : 0;
-            
-            // Use the new, clean function for conversion and apply the multiplier
-            view.setInt16(ptr, float32ToRawInt16(x, SCALE_FACTOR, EXPORT_MULTIPLIER), true);
-            view.setInt16(ptr+2, float32ToRawInt16(y, SCALE_FACTOR, EXPORT_MULTIPLIER), true);
-            view.setInt16(ptr+4, float32ToRawInt16(z, SCALE_FACTOR, EXPORT_MULTIPLIER), true);
+            const x = vec ? vec.x : 0; const y = vec ? vec.y : 0; const z = vec ? vec.z : 0;
+            view.setInt16(ptr, float32ToFloat16(x), true);
+            view.setInt16(ptr+2, float32ToFloat16(y), true);
+            view.setInt16(ptr+4, float32ToFloat16(z), true);
             ptr += 6;
-            
             if(vec && vec.userData.rotBytes) new Uint8Array(buffer).set(vec.userData.rotBytes, ptr);
             else for(let k=0; k<6; k++) view.setUint8(ptr+k, 0);
             ptr += 6;
@@ -1002,6 +993,8 @@ function setupUI() {
         const btn = document.getElementById('sidebar-toggle');
         btn.innerText = sidebar.classList.contains('collapsed') ? "▶" : "◀";
         
+        // Fix 1 & 2: Ensure the 3D viewer and camera resize immediately after the sidebar animation
+        // We use a timeout to give the CSS transition time to complete
         setTimeout(onWindowResize, 350); 
     });
 
