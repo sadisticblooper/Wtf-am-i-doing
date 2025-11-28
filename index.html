@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Animation Editor V4 (Hierarchy Fix Revert)</title>
+    <title>Animation Editor V4 (Fixed-Point Fix)</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/TransformControls.js"></script>
@@ -116,6 +116,8 @@
 // 1. CONSTANTS & GLOBALS
 // ==========================================
 const MAGIC_NUMBER_BIGINT = 457546134634734n;
+const FIXED_POINT_SCALE = 1000.0; // Assume 16-bit integer values are scaled by 1000.0
+
 const BONE_MAP = {
     0: "pelvis", 1: "stomach", 2: "chest", 3: "neck", 4: "head", 5: "hair", 6: "hair1",
     7: "zero_joint_hand_l", 8: "clavicle_l", 9: "arm_l", 10: "forearm_l",
@@ -214,7 +216,7 @@ let isDraggingTimeline = false;
 let rawBuffer = null;
 
 // ==========================================
-// 2. PARSER & UTILS (IEEE 754 Float16 Implementation)
+// 2. PARSER & UTILS (Fixed-Point Implementation)
 // ==========================================
 function log(msg, type="info") {
     const d = document.getElementById('log-output');
@@ -224,58 +226,6 @@ function log(msg, type="info") {
     d.appendChild(e);
     d.scrollTop = d.scrollHeight;
 }
-
-// Function to convert 16-bit unsigned integer (Float16) to Float32
-function float16ToFloat32(uint16) {
-    const sign = (uint16 & 0x8000) ? -1 : 1;
-    const exponent = (uint16 & 0x7C00) >> 10;
-    const fraction = uint16 & 0x03FF;
-
-    if (exponent === 0) {
-        // Subnormal or Zero
-        return sign * Math.pow(2, -14) * (fraction / 1024);
-    } else if (exponent === 0x1F) {
-        // Inf or NaN
-        return fraction ? NaN : sign * Infinity;
-    }
-
-    // Normal: sign * 2^(exponent - 15) * (1 + fraction/1024)
-    return sign * Math.pow(2, exponent - 15) * (1 + fraction / 1024);
-}
-
-// Function to read Float16 data from file
-function readFloat16(view, offset) {
-    if(offset + 2 > view.byteLength) return 0;
-    // Read as Uint16, little-endian (true)
-    const uint16 = view.getUint16(offset, true); 
-    return float16ToFloat32(uint16);
-}
-
-// Function to convert 3D Viewer float to raw Uint16 data for EXPORT
-function float32ToRawUint16(value) {
-    // This is a simplified/non-standard conversion common in JS context
-    // A more robust implementation would be needed for perfect fidelity,
-    // but this is the standard JS half-float implementation.
-    const float32 = new Float32Array([value]);
-    const uint32 = new Uint32Array(float32.buffer)[0];
-    
-    const sign = (uint32 >> 31) & 0x1;
-    let exponent = ((uint32 >> 23) & 0xFF) - 127; // Exponent bias for Float32 is 127
-    const mantissa = (uint32 & 0x7FFFFF) >> 13;
-
-    // Handle large/infinity
-    if (exponent >= 16) {
-        return (sign << 15) | 0x7C00; 
-    }
-    // Handle very small/denormalized
-    if (exponent <= -15) {
-        return (sign << 15); 
-    }
-    
-    exponent += 15; // Re-bias for Float16 (bias 15)
-    return (sign << 15) | (exponent << 10) | mantissa;
-}
-
 
 // ==========================================
 // BINARY MODDER UTILITY (Encapsulates mod-axis-ops.js functions)
@@ -305,11 +255,11 @@ const BinaryModder = {
         
         const inputView = new DataView(boneData);
         
-        // 1. Read Position (3 x Float16) - FIX IS HERE: use float16ToFloat32
+        // 1. Read Position (3 x Signed Int16, scaled)
         const pos = [
-            float16ToFloat32(inputView.getUint16(0, true)),
-            float16ToFloat32(inputView.getUint16(2, true)),
-            float16ToFloat32(inputView.getUint16(4, true))
+            inputView.getInt16(0, true) / FIXED_POINT_SCALE,
+            inputView.getInt16(2, true) / FIXED_POINT_SCALE,
+            inputView.getInt16(4, true) / FIXED_POINT_SCALE
         ];
 
         // 2. Apply Modifier
@@ -321,10 +271,10 @@ const BinaryModder = {
         const outputBuffer = new ArrayBuffer(12);
         const outputView = new DataView(outputBuffer);
 
-        // 4. Write Position (3 x Float16) - FIX IS HERE: use float32ToRawUint16
-        outputView.setUint16(0, float32ToRawUint16(pos[0]), true);
-        outputView.setUint16(2, float32ToRawUint16(pos[1]), true);
-        outputView.setUint16(4, float32ToRawUint16(pos[2]), true);
+        // 4. Write Position (3 x Signed Int16, scaled back)
+        outputView.setInt16(0, Math.round(pos[0] * FIXED_POINT_SCALE), true);
+        outputView.setInt16(2, Math.round(pos[1] * FIXED_POINT_SCALE), true);
+        outputView.setInt16(4, Math.round(pos[2] * FIXED_POINT_SCALE), true);
 
         // 5. Copy Rotation (last 6 bytes)
         for (let i = 6; i < 12; i++) {
@@ -336,6 +286,7 @@ const BinaryModder = {
     
     // --- START mod-axis-ops.js functions (bound to BinaryModder context) ---
     axisAdderAnimation: function(animationData, xOffset, yOffset, zOffset, selectedBones) {
+        // ... (Logic remains the same, relies on this.processBoneData) ...
         const { framesLength, boneIds, animationDataBytes, remainingData } = animationData;
         const boneCount = boneIds.length;
         const frameSize = boneCount * 12;
@@ -364,7 +315,6 @@ const BinaryModder = {
                     };
                 }
                 
-                // Use the corrected processBoneData
                 const processedBoneData = this.processBoneData(boneData, modifier);
                 
                 if (processedBoneData) {
@@ -393,6 +343,7 @@ const BinaryModder = {
     },
 
     axisScalerAnimation: function(animationData, scaleFactor, selectedBones) {
+        // ... (Logic remains the same, relies on this.processBoneData) ...
         const { framesLength, boneIds, animationDataBytes, remainingData } = animationData;
         const boneCount = boneIds.length;
         const frameSize = boneCount * 12;
@@ -434,7 +385,6 @@ const BinaryModder = {
                     };
                 }
                 
-                // Use the corrected processBoneData
                 const processedBoneData = this.processBoneData(boneData, modifier);
                 
                 if (processedBoneData) {
@@ -463,6 +413,7 @@ const BinaryModder = {
     },
 
     axisSetterAnimation: function(animationData, xValue, yValue, zValue, targetBoneId) {
+        // ... (Logic remains the same, relies on this.processBoneData) ...
         const { framesLength, boneIds, animationDataBytes, remainingData } = animationData;
         const boneCount = boneIds.length;
         const frameSize = boneCount * 12;
@@ -498,7 +449,6 @@ const BinaryModder = {
                     };
                 }
                 
-                // Use the corrected processBoneData
                 const processedBoneData = this.processBoneData(boneData, modifier);
                 
                 if (processedBoneData) {
@@ -532,7 +482,6 @@ const BinaryModder = {
 function reparseCurrentBuffer() {
     if(!rawBuffer) { log("No file loaded.", "err"); return; }
     try {
-        // NOTE: The previous `parseAnimationData` now uses Float16 correctly
         const result = parseAnimationData(rawBuffer);
         animationFrames = result.frames;
         fileMetadata = result.metadata;
@@ -549,7 +498,7 @@ function reparseCurrentBuffer() {
         
         drawTimeline();
 
-        log(`Parse Successful! Loaded ${result.frames.length} frames.`, "suc");
+        log(`Parse Successful! Loaded ${result.frames.length} frames. Position data interpreted as Signed Int16 scaled by 0.001.`, "suc");
     } catch(e) {
         log(e.message, "err");
     }
@@ -598,10 +547,10 @@ function parseAnimationData(buffer) {
         if (animPtr + frameSize > buffer.byteLength) break;
         const frameData = {}; 
         for (let b = 0; b < boneCount; b++) {
-            // FIX: Uses Float16 reader
-            const posX = readFloat16(view, animPtr);
-            const posY = readFloat16(view, animPtr + 2);
-            const posZ = readFloat16(view, animPtr + 4);
+            // FIX: Read as Signed Int16 and apply fixed-point scale
+            const posX = view.getInt16(animPtr, true) / FIXED_POINT_SCALE;
+            const posY = view.getInt16(animPtr + 2, true) / FIXED_POINT_SCALE;
+            const posZ = view.getInt16(animPtr + 4, true) / FIXED_POINT_SCALE;
             
             const rotBytes = buffer.slice(animPtr + 6, animPtr + 12);
             const boneId = metadata.boneIds[b];
@@ -619,9 +568,69 @@ function parseAnimationData(buffer) {
     return { frames, metadata };
 }
 
+// ... (Rest of the viewer, timeline, and UI logic remains the same) ...
+
+function reconstructBinary() {
+    const headerSize = 8;
+    const garbageLenSize = 2;
+    const garbageDataSize = fileMetadata.garbageSize * 8;
+    const metaSize = 4 + 2 + (fileMetadata.boneCount * 2);
+    const frameSize = fileMetadata.boneCount * 12;
+    const animDataSize = animationFrames.length * frameSize;
+    const footerSize = fileMetadata.remainingData ? fileMetadata.remainingData.byteLength : 0;
+    
+    const totalSize = fileMetadata.headerOffset + headerSize + garbageLenSize + garbageDataSize + metaSize + animDataSize + footerSize;
+    const buffer = new ArrayBuffer(totalSize);
+    const view = new DataView(buffer);
+    
+    let ptr = 0;
+    if(fileMetadata.headerOffset > 0 && rawBuffer) {
+        new Uint8Array(buffer).set(new Uint8Array(rawBuffer.slice(0, fileMetadata.headerOffset)), 0);
+        ptr += fileMetadata.headerOffset;
+    }
+
+    view.setBigUint64(ptr, fileMetadata.header || MAGIC_NUMBER_BIGINT, true); ptr += 8;
+    view.setInt16(ptr, fileMetadata.garbageSize, true); ptr += 2;
+    if(fileMetadata.garbageData) {
+        new Uint8Array(buffer).set(new Uint8Array(fileMetadata.garbageData), ptr);
+        ptr += garbageDataSize;
+    }
+
+    view.setUint32(ptr, animationFrames.length, true); ptr += 4;
+    view.setUint16(ptr, fileMetadata.boneCount, true); ptr += 2;
+
+    fileMetadata.boneIds.forEach(id => { view.setUint16(ptr, id, true); ptr += 2; });
+
+    animationFrames.forEach(frame => {
+        fileMetadata.boneIds.forEach(id => {
+            const vec = frame[id]; 
+            const x = vec ? vec.x : 0; 
+            const y = vec ? vec.y : 0; 
+            const z = vec ? vec.z : 0;
+            
+            // FIX: Scale float back and write as Signed Int16
+            view.setInt16(ptr, Math.round(x * FIXED_POINT_SCALE), true);
+            view.setInt16(ptr+2, Math.round(y * FIXED_POINT_SCALE), true);
+            view.setInt16(ptr+4, Math.round(z * FIXED_POINT_SCALE), true);
+            ptr += 6;
+            
+            if(vec && vec.userData.rotBytes) new Uint8Array(buffer).set(vec.userData.rotBytes, ptr);
+            else for(let k=0; k<6; k++) view.setUint8(ptr+k, 0);
+            ptr += 6;
+        });
+    });
+
+    if(fileMetadata.remainingData) new Uint8Array(buffer).set(new Uint8Array(fileMetadata.remainingData), ptr);
+    return buffer;
+}
+
+
 // ==========================================
 // 3. 3D VIEWER (Flat Structure Reversion)
 // ==========================================
+// ... (All functions below are unchanged from the previous, correct implementation, 
+//      but are included for a complete, runnable script) ...
+
 function initViewer() {
     const container = document.getElementById('canvas-container');
     const width = container.clientWidth;
@@ -1110,60 +1119,6 @@ function exportBytes() {
     } catch(e) {
         log("Export Failed: " + e.message, "err");
     }
-}
-
-function reconstructBinary() {
-    const headerSize = 8;
-    const garbageLenSize = 2;
-    const garbageDataSize = fileMetadata.garbageSize * 8;
-    const metaSize = 4 + 2 + (fileMetadata.boneCount * 2);
-    const frameSize = fileMetadata.boneCount * 12;
-    const animDataSize = animationFrames.length * frameSize;
-    const footerSize = fileMetadata.remainingData ? fileMetadata.remainingData.byteLength : 0;
-    
-    const totalSize = fileMetadata.headerOffset + headerSize + garbageLenSize + garbageDataSize + metaSize + animDataSize + footerSize;
-    const buffer = new ArrayBuffer(totalSize);
-    const view = new DataView(buffer);
-    
-    let ptr = 0;
-    if(fileMetadata.headerOffset > 0 && rawBuffer) {
-        new Uint8Array(buffer).set(new Uint8Array(rawBuffer.slice(0, fileMetadata.headerOffset)), 0);
-        ptr += fileMetadata.headerOffset;
-    }
-
-    view.setBigUint64(ptr, fileMetadata.header || MAGIC_NUMBER_BIGINT, true); ptr += 8;
-    view.setInt16(ptr, fileMetadata.garbageSize, true); ptr += 2;
-    if(fileMetadata.garbageData) {
-        new Uint8Array(buffer).set(new Uint8Array(fileMetadata.garbageData), ptr);
-        ptr += garbageDataSize;
-    }
-
-    view.setUint32(ptr, animationFrames.length, true); ptr += 4;
-    view.setUint16(ptr, fileMetadata.boneCount, true); ptr += 2;
-
-    fileMetadata.boneIds.forEach(id => { view.setUint16(ptr, id, true); ptr += 2; });
-
-    animationFrames.forEach(frame => {
-        fileMetadata.boneIds.forEach(id => {
-            const vec = frame[id]; 
-            const x = vec ? vec.x : 0; 
-            const y = vec ? vec.y : 0; 
-            const z = vec ? vec.z : 0;
-            
-            // FIX: Use the new Float16 encoder and set as Uint16
-            view.setUint16(ptr, float32ToRawUint16(x), true);
-            view.setUint16(ptr+2, float32ToRawUint16(y), true);
-            view.setUint16(ptr+4, float32ToRawUint16(z), true);
-            ptr += 6;
-            
-            if(vec && vec.userData.rotBytes) new Uint8Array(buffer).set(vec.userData.rotBytes, ptr);
-            else for(let k=0; k<6; k++) view.setUint8(ptr+k, 0);
-            ptr += 6;
-        });
-    });
-
-    if(fileMetadata.remainingData) new Uint8Array(buffer).set(new Uint8Array(fileMetadata.remainingData), ptr);
-    return buffer;
 }
 
 function setupUI() {
