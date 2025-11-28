@@ -3,12 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Animation Editor V4 (Hierarchy Fix Revert)</title>
+    <title>Animation Editor V5 (Export Fidelity Fix)</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/TransformControls.js"></script>
     <style>
-        /* ... (Style sheet remains the same) ... */
         body { margin: 0; overflow: hidden; background-color: #121212; font-family: 'Inter', 'Segoe UI', sans-serif; color: white; }
         #app-container { display: flex; height: 100vh; width: 100vw; overflow: hidden; position: relative; }
         #sidebar { width: 360px; min-width: 360px; background: #1e1e1e; border-right: 1px solid #333; display: flex; flex-direction: column; padding: 10px; z-index: 20; transition: margin-left 0.3s ease, min-width 0.3s ease; height: 100%; overflow-y: auto; margin-left: 0; position: relative; }
@@ -81,8 +80,8 @@
         <div class="panel">
             <h3>3. Settings</h3>
             <div class="control-group">
-                <label>Pos Scale (Read):</label>
-                <input type="number" id="scale-factor-input" value="100000.0" step="1.0">
+                <label>Pos Scale (Read/Write):</label>
+                <input type="number" id="scale-factor-input" value="310.0" step="1.0">
             </div>
             <div class="control-group">
                 <label>Export Multiplier (Write):</label>
@@ -262,7 +261,7 @@ function reparseCurrentBuffer() {
         
         currentFrame = 0;
         
-        // REBUILD SKELETON: REVERTED TO FLAT STRUCTURE TO AVOID HIERARCHY MISMATCH
+        // REBUILD SKELETON: Hierarchy/Centering logic fixed in V4
         skeletonData = parseSkeletonText(DEFAULT_SKELETON_TXT); 
         buildSkeletonVisuals();
         
@@ -284,7 +283,8 @@ function reparseCurrentBuffer() {
 function parseAnimationData(buffer) {
     const view = new DataView(buffer);
     let offset = parseInt(document.getElementById('offset-input').value) || 0;
-    const scaleFactor = parseFloat(document.getElementById('scale-factor-input').value) || 100000.0;
+    // Use the user's input scale factor, now defaulted to 310.0
+    const scaleFactor = parseFloat(document.getElementById('scale-factor-input').value) || 310.0;
     
     const metadata = { header: 0n, garbageSize: 0, garbageData: null, boneCount: 0, boneIds: [], remainingData: null, headerOffset: offset };
 
@@ -856,7 +856,7 @@ function exportBytes() {
 }
 
 function reconstructBinary() {
-    const SCALE_FACTOR = parseFloat(document.getElementById('scale-factor-input').value) || 100000.0;
+    const SCALE_FACTOR = parseFloat(document.getElementById('scale-factor-input').value) || 310.0;
     const EXPORT_MULTIPLIER = parseFloat(document.getElementById('export-multiplier-input').value) || 1.0;
     
     const headerSize = 8;
