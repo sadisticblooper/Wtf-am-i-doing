@@ -2,123 +2,273 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Animation Editor V3 (Diagnostic Mode)</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Animation Editor V3 (Pro Timeline)</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/TransformControls.js"></script>
     <style>
-        body { margin: 0; overflow: hidden; background-color: #121212; font-family: 'Consolas', 'Monaco', monospace; color: white; }
+        body { margin: 0; overflow: hidden; background-color: #121212; font-family: 'Inter', 'Segoe UI', sans-serif; color: white; }
         
-        /* Layout */
-        #container { display: flex; height: 100vh; }
-        #canvas-wrapper { flex-grow: 1; position: relative; }
+        /* Main Layout: Flex Row */
+        #app-container { 
+            display: flex; 
+            height: 100vh; 
+            width: 100vw; 
+            overflow: hidden; 
+            position: relative; 
+        }
+        
+        /* Left: Sidebar */
         #sidebar { 
-            width: 400px; 
+            width: 360px; 
+            min-width: 360px;
             background: #1e1e1e; 
-            border-left: 1px solid #333; 
+            border-right: 1px solid #333; 
             display: flex; 
             flex-direction: column; 
             padding: 10px;
-            box-shadow: -5px 0 15px rgba(0,0,0,0.5);
             z-index: 20;
-            overflow-y: auto;
+            transition: margin-left 0.3s ease, min-width 0.3s ease; /* Use margin to push content */
+            height: 100%; 
+            overflow-y: auto; 
+            /* Fix 2: Start with margin-left: 0 when open */
+            margin-left: 0; 
+            position: relative; /* Needs position for the margin trick to work cleanly */
         }
 
-        /* Panels */
-        .panel { background: #2a2a2a; border-radius: 6px; padding: 10px; margin-bottom: 10px; border: 1px solid #333; }
-        .panel h3 { margin: 0 0 10px 0; font-size: 14px; color: #81d4fa; text-transform: uppercase; border-bottom: 1px solid #444; padding-bottom: 5px; }
+        /* Fix 2: Collapse by moving the sidebar entirely out of the flow using negative margin */
+        #sidebar.collapsed {
+            margin-left: -360px; 
+            min-width: 0;
+            width: 0;
+            padding: 0; /* Remove padding when collapsed */
+            border-right: none;
+        }
+
+        /* Toggle Button */
+        #sidebar-toggle {
+            /* Fix 2: This button must now be positioned relative to the sidebar's edge */
+            position: absolute; 
+            top: 50%;
+            right: -24px; /* Sticks to the right edge of the 360px sidebar */
+            transform: translateY(-50%);
+            width: 24px;
+            height: 48px;
+            background: #1e1e1e;
+            border: 1px solid #333;
+            border-left: none;
+            border-radius: 0 8px 8px 0;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #81d4fa;
+            font-size: 12px;
+            z-index: 21;
+            transition: right 0.3s ease, margin-left 0.3s ease;
+        }
+        #sidebar-toggle:hover { background: #2a2a2a; color: white; }
         
-        /* Controls */
-        .control-group { margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between; font-size: 12px; }
+        /* Fix 2: Move button to the left edge of the screen when sidebar is collapsed */
+        #sidebar.collapsed #sidebar-toggle {
+            right: -24px; /* Stays at the edge of the collapsed 0-width sidebar */
+            position: fixed; /* Switch to fixed position relative to viewport */
+            left: 0;
+            transform: translateY(-50%);
+        }
+
+        /* Right: Main Content (Canvas + Timeline) */
+        #main-content {
+            /* Fix 2: Takes all remaining space */
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+            background: #000;
+            min-width: 0; /* Ensures it shrinks correctly in flex layout */
+        }
+
+        /* 3D Viewport */
+        #canvas-wrapper {
+            flex-grow: 1; /* Takes all available height above timeline */
+            position: relative;
+            background: radial-gradient(circle at center, #1a1a1a 0%, #000000 100%);
+            overflow: hidden;
+        }
+        #canvas-container { width: 100%; height: 100%; display: block; }
+
+        /* Timeline Footer */
+        #timeline-wrapper {
+            height: 140px; /* Fixed height for editor feel */
+            min-height: 140px;
+            background: #181818;
+            border-top: 1px solid #333;
+            display: flex;
+            flex-direction: column;
+            user-select: none;
+        }
+
+        /* Timeline Controls Bar */
+        #timeline-controls {
+            height: 36px;
+            background: #252525;
+            display: flex;
+            /* Fix 3: Center align content */
+            align-items: center;
+            /* Fix 3: Use justify-content for centering/spacing */
+            justify-content: center; 
+            padding: 0 10px;
+            gap: 15px;
+            border-bottom: 1px solid #333;
+            position: relative; /* For absolute positioning of time display */
+        }
+
+        /* Fix 3: Place time display on the right edge */
+        #time-display { 
+            position: absolute;
+            right: 15px;
+            font-family: monospace; 
+            font-size: 12px; 
+            color: #81d4fa; 
+            min-width: 120px; 
+            text-align: right;
+        }
+
+        .tc-btn {
+            background: none; border: none; color: #ccc; cursor: pointer; font-size: 16px; padding: 4px 8px; border-radius: 4px;
+        }
+        .tc-btn:hover { background: #333; color: white; }
+        .tc-btn.active { color: #81d4fa; }
+
+        
+        /* The Canvas Timeline */
+        #timeline-canvas-container {
+            flex-grow: 1;
+            position: relative;
+            overflow: hidden; 
+            background: #121212;
+            cursor: pointer;
+        }
+        canvas#timeline-canvas {
+            display: block; 
+            width: 100%; 
+            height: 100%;
+        }
+
+        /* UI Elements in Sidebar */
+        .panel { background: #2a2a2a; border-radius: 6px; padding: 12px; margin-bottom: 12px; border: 1px solid #333; }
+        .panel h3 { margin: 0 0 10px 0; font-size: 13px; color: #81d4fa; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid #444; padding-bottom: 5px; }
+        
+        .control-group { margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between; font-size: 12px; }
         .control-group label { color: #aaa; }
-        input[type="number"] { width: 60px; background: #333; border: 1px solid #555; color: white; padding: 2px 5px; }
+        input[type="number"], input[type="text"] { width: 70px; background: #111; border: 1px solid #444; color: white; padding: 4px; border-radius: 3px; }
         
-        button {
-            width: 100%; padding: 8px; background: #0d47a1; color: white; border: none; border-radius: 4px; cursor: pointer; margin-bottom: 5px; font-weight: bold;
+        button.action-btn {
+            width: 100%; padding: 10px; background: #37474f; color: white; border: none; border-radius: 4px; cursor: pointer; margin-bottom: 6px; font-weight: 600; font-size: 12px;
+            transition: all 0.2s; text-transform: uppercase;
         }
-        button:hover { background: #1565c0; }
-        button.secondary { background: #424242; }
-        button.danger { background: #c62828; }
+        button.action-btn:hover { background: #455a64; }
+        button.action-btn:disabled { background: #222; color: #555; cursor: not-allowed; }
+        
+        button.primary { background: #0d47a1; }
+        button.primary:hover { background: #1565c0; }
+        
+        button.success { background: #2e7d32; }
+        button.success:hover { background: #388e3c; }
+        
+        button.mode-active { background: #ff8f00; color: #000; }
+        button.mode-active:hover { background: #ffa000; }
 
-        /* Log */
+        #load-area { 
+            border: 2px dashed #444; padding: 25px 10px; text-align: center; color: #888; border-radius: 8px; cursor: pointer; transition: 0.2s; font-size: 13px;
+        }
+        #load-area:hover { border-color: #0d47a1; color: white; background: rgba(13, 71, 161, 0.1); }
+
         #log-output {
-            height: 150px; background: #111; border: 1px solid #333; 
-            overflow-y: auto; font-size: 11px; padding: 5px; color: #ccc;
+            flex-grow: 1; 
+            min-height: 100px; 
+            background: #111; border: 1px solid #333; border-radius: 4px;
+            overflow-y: auto; font-family: monospace; font-size: 11px; padding: 8px; color: #ccc;
         }
         .log-err { color: #ff5252; }
         .log-suc { color: #69f0ae; }
         .log-warn { color: #ffd740; }
 
-        /* Timeline */
-        #timeline-panel { position: absolute; bottom: 20px; left: 20px; right: 440px; }
-        input[type="range"] { width: 100%; }
-        
-        #load-area { border: 2px dashed #444; padding: 20px; text-align: center; color: #888; border-radius: 8px; cursor: pointer; transition: 0.2s; }
-        #load-area:hover { border-color: #0d47a1; color: white; background: #1a237e; }
-
     </style>
 </head>
 <body>
 
-<div id="container">
-    <div id="canvas-wrapper">
-        <div id="canvas-container"></div>
-        <div id="timeline-panel" class="panel">
-            <div class="control-group">
-                <button id="play-btn" class="secondary" style="width: 80px;">PLAY</button>
-                <span id="frame-counter">Frame: 0 / 0</span>
-                <span>Speed: <span id="fps-display">30</span> FPS</span>
-            </div>
-            <input type="range" id="timeline" min="0" max="0" value="0" step="1">
-        </div>
-    </div>
-
+<div id="app-container">
     <div id="sidebar">
+        <div id="sidebar-toggle" title="Toggle Sidebar">◀</div>
+
         <div class="panel">
-            <h3>1. Load File</h3>
+            <h3>1. File I/O</h3>
             <div id="load-area" onclick="document.getElementById('file-input').click()">
-                Click to Upload Animation<br>(.bytes, .dat)
+                <span style="font-size: 20px;">📂</span><br>Click to Load .bytes / .dat
             </div>
             <input type="file" id="file-input" style="display: none;">
         </div>
 
         <div class="panel">
-            <h3>2. Parser Settings</h3>
-            <div class="control-group">
-                <label>Header Offset (Bytes):</label>
-                <input type="number" id="offset-input" value="0">
+            <h3>2. Editor Tools</h3>
+            <button id="edit-mode-btn" class="action-btn">✎ Enter Edit Mode</button>
+            <div style="display: flex; gap: 5px;">
+                <button id="undo-btn" class="action-btn" disabled style="flex:1;">⎌ Undo (0)</button>
             </div>
-             <div class="control-group">
-                <label>Position Scale Factor:</label>
+            
+            <div id="save-tools" style="display:none; margin-top:5px; padding-top:5px; border-top:1px dashed #444;">
+                <button id="tick-btn" class="action-btn success">✔ Commit Changes</button>
+                <button id="export-btn" class="action-btn primary" style="display:none;">⬇ Export .bytes</button>
+            </div>
+            <div style="font-size: 11px; color: #666; margin-top: 5px; text-align: center;">
+                <em>Select bone -> Move with Gizmo -> Undo if needed</em>
+            </div>
+        </div>
+
+        <div class="panel">
+            <h3>3. Settings</h3>
+            <div class="control-group">
+                <label>Pos Scale:</label>
                 <input type="number" id="scale-factor-input" value="100000.0" step="100.0">
             </div>
             <div class="control-group">
-                <label>Forced Frame Count:</label>
-                <input type="number" id="force-frames" placeholder="Auto">
+                <label>Header Offset:</label>
+                <input type="number" id="offset-input" value="0">
             </div>
-             <div class="control-group">
-                <label>Forced Bone Count:</label>
-                <input type="number" id="force-bones" placeholder="Auto">
-            </div>
-            <div class="control-group">
-                <label>Little Endian?</label>
-                <input type="checkbox" id="endian-check" checked>
-            </div>
-            <button onclick="reparseCurrentBuffer()" class="secondary">Retry Parse with Settings</button>
+            <button onclick="reparseCurrentBuffer()" class="action-btn" style="background:#444;">↻ Reload Data</button>
         </div>
 
-        <div class="panel" style="flex-grow: 1;">
+        <div class="panel" style="display:flex; flex-direction:column; flex-grow:1; margin-bottom:0;">
             <h3>System Log</h3>
             <div id="log-output"></div>
+        </div>
+    </div>
+    
+    <div id="main-content">
+        <div id="canvas-wrapper">
+            <div id="canvas-container"></div>
+        </div>
+
+        <div id="timeline-wrapper">
+            <div id="timeline-controls">
+                <button id="play-btn" class="tc-btn">▶</button>
+                <button id="stop-btn" class="tc-btn">◼</button>
+                <span id="time-display">Frame: 0</span>
+            </div>
+            <div id="timeline-canvas-container">
+                <canvas id="timeline-canvas"></canvas>
+            </div>
         </div>
     </div>
 </div>
 
 <script>
 // ==========================================
-// 1. CONSTANTS
+// 1. CONSTANTS & GLOBALS
 // ==========================================
-const MAGIC_NUMBER_BIGINT = 457546134634734n; // 0x0001A044B1E612E (approx)
+const MAGIC_NUMBER_BIGINT = 457546134634734n;
 const BONE_MAP = {
     0: "pelvis", 1: "stomach", 2: "chest", 3: "neck", 4: "head", 5: "hair", 6: "hair1",
     7: "zero_joint_hand_l", 8: "clavicle_l", 9: "arm_l", 10: "forearm_l",
@@ -130,10 +280,9 @@ const BONE_MAP = {
     41: "zero_joint_pelvis_l", 42: "thigh_l", 43: "calf_l", 44: "foot_l", 45: "toe_l", 46: "back_l",
     47: "zero_joint_pelvis_r", 48: "thigh_r", 49: "calf_r", 50: "foot_r", 51: "toe_r", 52: "back_r",
     53: "biceps_twist_l", 54: "biceps_twist_r", 55: "item_l", 56: "item_r",
-    57: "thigh_twist_l", 58: "thigh_twist_r" // Added missing bones
+    57: "thigh_twist_l", 58: "thigh_twist_r"
 };
 
-// UPDATED: T-Pose data corrected using positions from xecaultve.txt
 const DEFAULT_SKELETON_TXT = `
 "pelvis" [BONE] | G.Pos:(-105.750, 80.938, -7.070)
   "zero_joint_pelvis_l" [BONE] | G.Pos:(-105.750, 80.938, -7.070)
@@ -193,8 +342,27 @@ const DEFAULT_SKELETON_TXT = `
       "back_r" [BONE] | G.Pos:(-102.217, 77.661, -19.888)
 `;
 
+let scene, camera, renderer, controls, transformControl;
+let skeletonNodes = [], skeletonLines = [];
+let animationFrames = [];
+let fileMetadata = {}; 
+let isPlaying = false;
+let isEditMode = false;
+let currentFrame = 0;
+let lastTime = 0;
+let skeletonData = [];
+let undoStack = [];
+let loadedFileName = "animation.bytes";
+const MAX_UNDO = 5;
+
+// Timeline Vars
+let tlCanvas, tlCtx;
+let tlScale = 10; // Pixels per frame
+let tlScrollX = 0;
+let isDraggingTimeline = false;
+
 // ==========================================
-// 2. UTILS
+// 2. PARSER & UTILS
 // ==========================================
 function log(msg, type="info") {
     const d = document.getElementById('log-output');
@@ -205,35 +373,40 @@ function log(msg, type="info") {
     d.scrollTop = d.scrollHeight;
 }
 
-// Fixed-point decoding based on analysis of related files (reading signed 16-bit integer and scaling)
-function readFloat16(view, offset, littleEndian) {
+function readFloat16(view, offset, littleEndian, scale) {
     if(offset + 2 > view.byteLength) return 0;
-    
-    // Read as signed 16-bit integer (short)
     const shortValue = view.getInt16(offset, littleEndian);
-    
-    // Read dynamically from UI input, falling back to the discovered 100000.0
-    const SCALE_FACTOR = parseFloat(document.getElementById('scale-factor-input').value) || 100000.0;
-    
-    return shortValue / SCALE_FACTOR;
+    return shortValue / scale;
 }
 
-// ==========================================
-// 3. PARSER
-// ==========================================
+function float32ToFloat16(value) {
+    const SCALE_FACTOR = parseFloat(document.getElementById('scale-factor-input').value) || 100000.0;
+    let intVal = Math.round(value * SCALE_FACTOR);
+    if(intVal > 32767) intVal = 32767;
+    if(intVal < -32768) intVal = -32768;
+    return intVal;
+}
+
 let rawBuffer = null;
 
 function reparseCurrentBuffer() {
     if(!rawBuffer) { log("No file loaded.", "err"); return; }
     try {
-        const frames = parseAnimationData(rawBuffer);
-        animationFrames = frames;
+        const result = parseAnimationData(rawBuffer);
+        animationFrames = result.frames;
+        fileMetadata = result.metadata;
         
-        document.getElementById('timeline').max = frames.length - 1;
-        document.getElementById('frame-counter').innerText = `Frame: 0 / ${frames.length-1}`;
         currentFrame = 0;
         updateSkeletonPose(0);
-        log(`Parse Successful! Loaded ${frames.length} frames.`, "suc");
+        
+        // Reset Undo
+        undoStack = [];
+        updateUndoBtn();
+        
+        // Redraw timeline
+        drawTimeline();
+
+        log(`Parse Successful! Loaded ${result.frames.length} frames.`, "suc");
     } catch(e) {
         log(e.message, "err");
     }
@@ -241,179 +414,155 @@ function reparseCurrentBuffer() {
 
 function parseAnimationData(buffer) {
     const view = new DataView(buffer);
-    const littleEndian = document.getElementById('endian-check').checked;
     let offset = parseInt(document.getElementById('offset-input').value) || 0;
+    const scaleFactor = parseFloat(document.getElementById('scale-factor-input').value) || 100000.0;
     
-    log(`Parsing starting at Offset: ${offset}`, "info");
+    // Simple metadata object
+    const metadata = { header: 0n, garbageSize: 0, garbageData: null, boneCount: 0, boneIds: [], remainingData: null, headerOffset: offset };
 
-    // 1. Header verification and initial read pointer
-    if (view.byteLength < offset + 14) {
-        throw new Error("File too short for minimum header size.");
-    }
+    if (view.byteLength < offset + 14) throw new Error("File too short.");
 
-    try {
-        const header = view.getBigUint64(offset, littleEndian);
-        if(header !== MAGIC_NUMBER_BIGINT) {
-            log(`Header at ${offset} is ${header} (Expected ${MAGIC_NUMBER_BIGINT}). Proceeding anyway...`, "warn");
-        } else {
-            log("Magic Number verified.", "suc");
-        }
-    } catch(e) { log("Could not read header (8 bytes).", "warn"); }
-
-    let readPtr = offset + 8; // Move past 8-byte Magic Number
-
-    // 2. Metadata (Corrected Logic based on flexible header analysis)
-    let framesLength, boneCount;
-    
-    // Read garbage size (2 bytes)
-    const garbageSize = view.getInt16(readPtr, littleEndian);
+    let readPtr = offset + 8; // Skip header
+    const garbageSize = view.getInt16(readPtr, true); // Assume little endian default for web
+    metadata.garbageSize = garbageSize;
     readPtr += 2;
-    log(`Read Garbage Size: ${garbageSize}`, "info");
-
-    // Skip garbage data (garbageSize * 8 bytes)
-    readPtr += (garbageSize * 8);
-
-    if (readPtr + 6 > view.byteLength) { // Check if we have enough space for frame count (4) + bone count (2)
-        throw new Error(`EOF reached while attempting to read frame count at offset ${readPtr}.`);
+    if(garbageSize > 0) {
+        metadata.garbageData = buffer.slice(readPtr, readPtr + (garbageSize * 8));
+        readPtr += (garbageSize * 8);
     }
 
-    // Check for Manual Overrides
-    const forceFrames = document.getElementById('force-frames').value;
-    const forceBones = document.getElementById('force-bones').value;
-
-    if(forceFrames) {
-        framesLength = parseInt(forceFrames);
-        log(`Using Forced Frames: ${framesLength}`, "info");
-    } else {
-        // Read Frames Count (4 bytes, Int32/Uint32 is suitable for count)
-        framesLength = view.getUint32(readPtr, littleEndian);
-        readPtr += 4;
-        log(`Read Frames Count: ${framesLength}`, "info");
-    }
-
-    if(forceBones) {
-        boneCount = parseInt(forceBones);
-        log(`Using Forced Bones: ${boneCount}`, "info");
-    } else {
-        // Read Bone Count (2 bytes, Uint16)
-        boneCount = view.getUint16(readPtr, littleEndian);
-        readPtr += 2;
-        log(`Read Bone Count: ${boneCount}`, "info");
-    }
+    let framesLength = view.getUint32(readPtr, true);
+    readPtr += 4;
     
-    // SANITY CHECKS
-    if(framesLength > 100000 || framesLength < 0) throw new Error(`Insane Frame Count: ${framesLength}. Wrong Offset or Endianness?`);
-    if(boneCount > 500 || boneCount <= 0) throw new Error(`Insane Bone Count: ${boneCount}. Wrong Offset?`);
-
-    // 3. Bone IDs
-    const boneIds = [];
-    
-    if (readPtr + (boneCount * 2) > view.byteLength) {
-        throw new Error("EOF reached while attempting to read Bone IDs.");
-    }
+    const boneCount = view.getUint16(readPtr, true);
+    metadata.boneCount = boneCount;
+    readPtr += 2;
 
     for (let i = 0; i < boneCount; i++) {
-        boneIds.push(view.getUint16(readPtr, littleEndian));
+        metadata.boneIds.push(view.getUint16(readPtr, true));
         readPtr += 2;
     }
 
-    // 4. Data
     const frames = [];
-    const frameSize = boneCount * 12; // 3 pos (2 bytes each) + 6 bytes of padding/rotation data = 12 bytes per bone
+    const frameSize = boneCount * 12;
 
     for (let f = 0; f < framesLength; f++) {
-        if (readPtr + frameSize > buffer.byteLength) {
-            log(`Stopped early at frame ${f} (EOF).`, "warn");
-            break;
-        }
-
-        const frameData = {};
+        if (readPtr + frameSize > buffer.byteLength) break;
+        const frameData = {}; 
         for (let b = 0; b < boneCount; b++) {
-            const posX = readFloat16(view, readPtr, littleEndian);
-            const posY = readFloat16(view, readPtr + 2, littleEndian);
-            const posZ = readFloat16(view, readPtr + 4, littleEndian);
+            const posX = readFloat16(view, readPtr, true, scaleFactor);
+            const posY = readFloat16(view, readPtr + 2, true, scaleFactor);
+            const posZ = readFloat16(view, readPtr + 4, true, scaleFactor);
+            const rotBytes = buffer.slice(readPtr + 6, readPtr + 12);
+            const boneId = metadata.boneIds[b];
             
-            const boneId = boneIds[b];
-            // NOTE: Only position data is read (6 bytes are skipped), assuming rotation/scale is not necessary for this debug view
-            frameData[boneId] = new THREE.Vector3(posX, posY, posZ);
-
-            readPtr += 12; // 6 bytes pos + 6 bytes rot/padding
+            const vec = new THREE.Vector3(posX, posY, posZ);
+            vec.userData = { rotBytes: new Uint8Array(rotBytes) };
+            frameData[boneId] = vec;
+            readPtr += 12;
         }
         frames.push(frameData);
     }
-
-    return frames;
+    if(readPtr < buffer.byteLength) metadata.remainingData = buffer.slice(readPtr);
+    return { frames, metadata };
 }
 
-
 // ==========================================
-// 4. VIEWER
+// 3. 3D VIEWER
 // ==========================================
-let scene, camera, renderer, controls; // 'controls' declared globally
-let skeletonNodes = [], skeletonLines = [];
-let animationFrames = [];
-let isPlaying = false;
-let currentFrame = 0;
-let playbackSpeed = 30;
-let lastTime = 0;
-let skeletonData = [];
-
 function initViewer() {
     const container = document.getElementById('canvas-container');
-    
-    // Initial dimensions (needed to create renderer)
-    const initialWidth = window.innerWidth - 420; // Sidebar width 400 + padding
-    const initialHeight = window.innerHeight;
+    const width = container.clientWidth;
+    const height = container.clientHeight;
 
     scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x111111);
+    scene.background = new THREE.Color(0x111111); // Fallback color
 
-    camera = new THREE.PerspectiveCamera(60, initialWidth / initialHeight, 0.1, 1000);
-    // Camera position set for a good initial view
+    camera = new THREE.PerspectiveCamera(60, width / height, 0.1, 1000);
     camera.position.set(0, 100, 400); 
-    camera.lookAt(0, 100, 0); 
 
-    renderer = new THREE.WebGLRenderer({ antialias: true });
-    renderer.setSize(initialWidth, initialHeight);
+    renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setSize(width, height);
+    renderer.setPixelRatio(window.devicePixelRatio);
     container.appendChild(renderer.domElement);
     
-    // OrbitControls Setup
     controls = new THREE.OrbitControls(camera, renderer.domElement);
-    controls.target.set(0, 100, 0); // Focus on the center of the skeleton (approx)
-    controls.enableDamping = true; // Smooth camera movements
-    controls.dampingFactor = 0.05;
-    controls.screenSpacePanning = true; // Allows panning in all directions
-    controls.update();
+    controls.target.set(0, 100, 0);
+    controls.enableDamping = true;
     
-    // Resize handler
-    window.addEventListener('resize', onWindowResize, false);
-    function onWindowResize() {
-        const width = container.offsetWidth;
-        const height = container.offsetHeight;
-        camera.aspect = width / height;
-        camera.updateProjectionMatrix();
-        renderer.setSize(width, height);
-    }
+    transformControl = new THREE.TransformControls(camera, renderer.domElement);
+    transformControl.addEventListener('dragging-changed', (event) => {
+        controls.enabled = !event.value; 
+        if(!event.value) recordUndo();
+    });
+    transformControl.addEventListener('change', () => {
+        if(transformControl.object) updateBoneFromTransform(transformControl.object);
+    });
+    scene.add(transformControl);
 
-    const grid = new THREE.GridHelper(500, 50, 0x333333, 0x222222);
-    scene.add(grid);
+    scene.add(new THREE.GridHelper(500, 50, 0x444444, 0x222222));
     scene.add(new THREE.AxesHelper(50)); 
-    
     const light = new THREE.DirectionalLight(0xffffff, 1);
     light.position.set(50, 200, 100);
     scene.add(light);
-    scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+    scene.add(new THREE.AmbientLight(0xffffff, 0.6));
 
-    // Load Default Skeleton
+    window.addEventListener('resize', onWindowResize, false);
+    
+    // Skeleton Init
     skeletonData = parseSkeletonText(DEFAULT_SKELETON_TXT);
     buildSkeletonVisuals();
-
-    // Controls for UI (not camera)
-    setupControls();
-
-    requestAnimationFrame(animate);
     
-    log("System Ready. Upload a file.", "suc");
+    // Setup UI & Timeline
+    setupUI();
+    initTimeline();
+    
+    // Start Loop
+    requestAnimationFrame(animate);
+}
+
+function onWindowResize() {
+    const wrapper = document.getElementById('canvas-wrapper');
+    const w = wrapper.clientWidth;
+    const h = wrapper.clientHeight;
+    
+    // Fix 1: Update camera aspect ratio immediately when the canvas size changes
+    camera.aspect = w / h; 
+    camera.updateProjectionMatrix();
+    
+    renderer.setSize(w, h);
+    
+    resizeTimeline();
+}
+
+// Raycasting for Edit Mode
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+
+document.getElementById('canvas-container').addEventListener('pointerdown', (event) => {
+    if(!isEditMode) return;
+    const rect = renderer.domElement.getBoundingClientRect();
+    mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+    mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+    
+    raycaster.setFromCamera(mouse, camera);
+    const intersects = raycaster.intersectObjects(skeletonNodes);
+
+    if (intersects.length > 0) {
+        selectNode(intersects[0].object);
+    } else if (!transformControl.dragging) {
+        deselectNode();
+    }
+});
+
+function selectNode(mesh) {
+    skeletonNodes.forEach(n => n.material.color.setHex(0x00ff00));
+    mesh.material.color.setHex(0x0088ff); 
+    transformControl.attach(mesh);
+}
+function deselectNode() {
+    transformControl.detach();
+    skeletonNodes.forEach(n => n.material.color.setHex(0x00ff00));
 }
 
 function parseSkeletonText(txt) {
@@ -433,9 +582,7 @@ function parseSkeletonText(txt) {
                 parentIndex: -1,
                 boneId: -1
             };
-            for(const [id, val] of Object.entries(BONE_MAP)) {
-                if(val === name) { node.boneId = parseInt(id); break; }
-            }
+            for(const [id, val] of Object.entries(BONE_MAP)) if(val === name) { node.boneId = parseInt(id); break; }
             if(indent > 0) {
                 while(stack.length > indent) stack.pop();
                 if(stack.length > 0) node.parentIndex = stack[stack.length-1];
@@ -451,23 +598,19 @@ function buildSkeletonVisuals() {
     skeletonNodes.forEach(n => scene.remove(n));
     skeletonLines.forEach(l => scene.remove(l));
     skeletonNodes = []; skeletonLines = [];
-
-    // Sphere radius reduced from 5 to 2.5
     const geo = new THREE.SphereGeometry(2.0, 8, 8);
-    const mat = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
+    const mat = new THREE.MeshBasicMaterial({ color: 0x00ff00 }); 
     const lineMat = new THREE.LineBasicMaterial({ color: 0xcccccc, transparent: true, opacity: 0.8 }); 
 
     skeletonData.forEach((bone, i) => {
-        const mesh = new THREE.Mesh(geo, mat);
+        const mesh = new THREE.Mesh(geo, mat.clone()); 
         mesh.position.copy(bone.initialPos);
         mesh.userData = { ...bone, originalPos: bone.initialPos.clone() };
         scene.add(mesh);
         skeletonNodes.push(mesh);
 
         if(bone.parentIndex !== -1) {
-            const lineGeo = new THREE.BufferGeometry().setFromPoints([
-                skeletonNodes[bone.parentIndex].position, mesh.position
-            ]);
+            const lineGeo = new THREE.BufferGeometry().setFromPoints([skeletonNodes[bone.parentIndex].position, mesh.position]);
             const line = new THREE.Line(lineGeo, lineMat);
             line.userData = { parent: bone.parentIndex, child: i };
             scene.add(line);
@@ -476,26 +619,41 @@ function buildSkeletonVisuals() {
     });
 }
 
+function updateBoneFromTransform(mesh) {
+    if(!animationFrames[currentFrame]) return;
+    const id = mesh.userData.boneId;
+    const currentWorldPos = mesh.position.clone();
+    const tPosePos = mesh.userData.originalPos.clone();
+    const rootData = animationFrames[currentFrame][0];
+    const globalOffset = rootData ? rootData.clone() : new THREE.Vector3(0,0,0);
+    
+    let newAnimVec;
+    if (id === 0) newAnimVec = currentWorldPos.clone().sub(tPosePos);
+    else newAnimVec = currentWorldPos.clone().sub(tPosePos).sub(globalOffset);
+
+    const existing = animationFrames[currentFrame][id];
+    if(existing && existing.userData.rotBytes) newAnimVec.userData = { rotBytes: existing.userData.rotBytes };
+
+    animationFrames[currentFrame][id] = newAnimVec;
+    if (id === 0) updateSkeletonPose(currentFrame); else updateLines();
+}
+
 function updateSkeletonPose(frameIdx) {
     if(!animationFrames[frameIdx]) return;
     const frameData = animationFrames[frameIdx];
-    
-    // Pelvis logic: ID 0 is global mover (translation offset)
     const globalOffset = frameData[0] ? frameData[0].clone() : new THREE.Vector3();
-
     skeletonNodes.forEach(node => {
+        if(transformControl.object === node && transformControl.dragging) return;
         const id = node.userData.boneId;
-        const pos = node.userData.originalPos.clone(); // Start at T-Pose
-
-        // 1. Add specific bone animation (displacement from T-Pose)
+        const pos = node.userData.originalPos.clone();
         if(frameData[id]) pos.add(frameData[id]);
-
-        // 2. Add Pelvis Global Motion (except to pelvis itself, which already has the animation data)
         if(id !== 0) pos.add(globalOffset); 
-
         node.position.copy(pos);
     });
+    updateLines();
+}
 
+function updateLines() {
     skeletonLines.forEach(line => {
         const p = skeletonNodes[line.userData.parent].position;
         const c = skeletonNodes[line.userData.child].position;
@@ -508,57 +666,345 @@ function updateSkeletonPose(frameIdx) {
 
 function animate(time) {
     requestAnimationFrame(animate);
-    
-    // Update controls for smooth camera damping/inertia
-    if(controls) controls.update(); 
-    
+    controls.update(); 
     if(isPlaying && animationFrames.length > 0) {
-        // Run at ~30 FPS
         if(time - lastTime > (1000/30)) { 
             currentFrame = (currentFrame + 1) % animationFrames.length;
-            updateSkeletonPose(currentFrame);
-            document.getElementById('timeline').value = currentFrame;
-            document.getElementById('frame-counter').innerText = `Frame: ${currentFrame} / ${animationFrames.length-1}`;
+            updateUIForFrame(currentFrame);
             lastTime = time;
         }
+    } else {
+        if(isEditMode) updateLines();
     }
     renderer.render(scene, camera);
 }
 
-function setupControls() {
+// ==========================================
+// 4. TIMELINE LOGIC (CANVAS)
+// ==========================================
+function initTimeline() {
+    tlCanvas = document.getElementById('timeline-canvas');
+    tlCtx = tlCanvas.getContext('2d');
+    
+    // Mouse events for scrubbing
+    tlCanvas.addEventListener('mousedown', onTlMouseDown);
+    window.addEventListener('mouseup', onTlMouseUp);
+    window.addEventListener('mousemove', onTlMouseMove);
+    
+    // Wheel to zoom
+    tlCanvas.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        tlScale += e.deltaY * -0.01;
+        if(tlScale < 1) tlScale = 1;
+        if(tlScale > 50) tlScale = 50;
+        drawTimeline();
+    });
+
+    resizeTimeline();
+}
+
+function resizeTimeline() {
+    const container = document.getElementById('timeline-canvas-container');
+    tlCanvas.width = container.clientWidth;
+    tlCanvas.height = container.clientHeight;
+    drawTimeline();
+}
+
+function drawTimeline() {
+    const w = tlCanvas.width;
+    const h = tlCanvas.height;
+    const totalFrames = animationFrames.length || 0;
+    
+    tlCtx.fillStyle = '#1e1e1e';
+    tlCtx.fillRect(0, 0, w, h);
+    
+    if(totalFrames === 0) return;
+
+    // Center the current frame? Or standard scroll? 
+    // Let's keep it simple: timeline starts at tlScrollX
+    // But we want to auto-scroll if playing
+    
+    // Ruler Background
+    tlCtx.fillStyle = '#252525';
+    tlCtx.fillRect(0, 0, w, 25);
+    tlCtx.strokeStyle = '#555';
+    tlCtx.lineWidth = 1;
+    tlCtx.beginPath();
+    tlCtx.moveTo(0, 25); tlCtx.lineTo(w, 25);
+    tlCtx.stroke();
+
+    const startFrame = Math.floor(tlScrollX / tlScale);
+    const endFrame = startFrame + Math.ceil(w / tlScale) + 1;
+
+    // Draw Ticks & Frames
+    for (let f = startFrame; f < endFrame; f++) {
+        if (f < 0 || f >= totalFrames) continue;
+        const x = (f * tlScale) - tlScrollX;
+        
+        // Major tick
+        if (f % 5 === 0) {
+            tlCtx.strokeStyle = '#888';
+            tlCtx.beginPath();
+            tlCtx.moveTo(x, 0); tlCtx.lineTo(x, 25);
+            tlCtx.stroke();
+            
+            tlCtx.fillStyle = '#ccc';
+            tlCtx.font = '10px monospace';
+            tlCtx.fillText(f.toString(), x + 4, 15);
+        } else {
+            // Minor tick
+            tlCtx.strokeStyle = '#444';
+            tlCtx.beginPath();
+            tlCtx.moveTo(x, 15); tlCtx.lineTo(x, 25);
+            tlCtx.stroke();
+        }
+
+        // Frame Block (Edit Mode visualization)
+        if (isEditMode) {
+            // Visualize keyframes (here, every frame is technically a keyframe in .bytes)
+            tlCtx.fillStyle = '#2e7d32'; // Green blocks
+            tlCtx.fillRect(x + 1, 30, tlScale - 2, 40);
+        } else {
+            // Standard gray blocks
+            tlCtx.fillStyle = '#37474f';
+            tlCtx.fillRect(x + 1, 30, tlScale - 2, 40);
+        }
+    }
+
+    // Playhead
+    const playheadX = (currentFrame * tlScale) - tlScrollX;
+    
+    // Scrubber line
+    tlCtx.strokeStyle = '#ff5252';
+    tlCtx.lineWidth = 2;
+    tlCtx.beginPath();
+    tlCtx.moveTo(playheadX, 0); 
+    tlCtx.lineTo(playheadX, h);
+    tlCtx.stroke();
+
+    // Scrubber Top Triangle
+    tlCtx.fillStyle = '#ff5252';
+    tlCtx.beginPath();
+    tlCtx.moveTo(playheadX - 6, 0);
+    tlCtx.lineTo(playheadX + 6, 0);
+    tlCtx.lineTo(playheadX, 10);
+    tlCtx.fill();
+}
+
+function onTlMouseDown(e) {
+    isDraggingTimeline = true;
+    updateTimelineFromMouse(e);
+}
+function onTlMouseUp(e) {
+    isDraggingTimeline = false;
+}
+function onTlMouseMove(e) {
+    if(isDraggingTimeline) {
+        updateTimelineFromMouse(e);
+    }
+}
+function updateTimelineFromMouse(e) {
+    const rect = tlCanvas.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    
+    // Calculate frame from X
+    const clickedFrame = Math.floor((x + tlScrollX) / tlScale);
+    
+    if(clickedFrame >= 0 && clickedFrame < animationFrames.length) {
+        currentFrame = clickedFrame;
+        isPlaying = false;
+        updateUIForFrame(currentFrame);
+    }
+}
+
+function updateUIForFrame(f) {
+    document.getElementById('time-display').innerText = `Frame: ${f} / ${animationFrames.length-1}`;
+    
+    // Auto-scroll timeline to keep playhead centered
+    const w = tlCanvas.width;
+    const playheadX = (f * tlScale) - tlScrollX;
+    
+    if (playheadX > w * 0.8) {
+        tlScrollX = (f * tlScale) - (w * 0.5);
+    } else if (playheadX < w * 0.2) {
+        tlScrollX = (f * tlScale) - (w * 0.5);
+    }
+    if(tlScrollX < 0) tlScrollX = 0;
+    
+    drawTimeline();
+    updateSkeletonPose(f);
+}
+
+// ==========================================
+// 5. APP LOGIC
+// ==========================================
+function toggleEditMode() {
+    isEditMode = !isEditMode;
+    const btn = document.getElementById('edit-mode-btn');
+    const saveTools = document.getElementById('save-tools');
+
+    if(isEditMode) {
+        btn.classList.add('mode-active');
+        btn.innerText = "✎ EXIT EDIT MODE";
+        saveTools.style.display = 'block';
+        isPlaying = false;
+        log("Edit Mode Enabled.", "info");
+    } else {
+        btn.classList.remove('mode-active');
+        btn.innerText = "✎ ENTER EDIT MODE";
+        saveTools.style.display = 'none';
+        deselectNode();
+        log("Edit Mode Disabled.", "info");
+    }
+    drawTimeline(); // Redraw to show colored blocks
+}
+
+function recordUndo() {
+    const frameSnapshot = {};
+    const frameData = animationFrames[currentFrame];
+    for(let key in frameData) {
+        const vec = frameData[key].clone();
+        vec.userData = { ...frameData[key].userData };
+        frameSnapshot[key] = vec;
+    }
+    undoStack.push({ frameIndex: currentFrame, data: frameSnapshot });
+    if(undoStack.length > MAX_UNDO) undoStack.shift(); 
+    updateUndoBtn();
+}
+
+function performUndo() {
+    if(undoStack.length === 0) return;
+    const action = undoStack.pop();
+    animationFrames[action.frameIndex] = action.data;
+    if(currentFrame === action.frameIndex) {
+        updateSkeletonPose(currentFrame);
+        if(transformControl.object) transformControl.attach(transformControl.object);
+    }
+    updateUndoBtn();
+    log("Undo performed.", "info");
+}
+
+function updateUndoBtn() {
+    const btn = document.getElementById('undo-btn');
+    btn.innerText = `⎌ Undo (${undoStack.length})`;
+    btn.disabled = undoStack.length === 0;
+}
+
+function saveProgress() {
+    document.getElementById('export-btn').style.display = 'inline-block';
+    log("Changes committed. Ready to Export.", "suc");
+}
+
+function exportBytes() {
+    if(!rawBuffer) return;
+    try {
+        const buffer = reconstructBinary();
+        const blob = new Blob([buffer], {type: "application/octet-stream"});
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = "edited_" + loadedFileName;
+        link.click();
+        log("Export successful!", "suc");
+    } catch(e) {
+        log("Export Failed: " + e.message, "err");
+    }
+}
+
+function reconstructBinary() {
+    // Rebuild logic
+    const headerSize = 8;
+    const garbageLenSize = 2;
+    const garbageDataSize = fileMetadata.garbageSize * 8;
+    const metaSize = 4 + 2 + (fileMetadata.boneCount * 2);
+    const frameSize = fileMetadata.boneCount * 12;
+    const animDataSize = animationFrames.length * frameSize;
+    const footerSize = fileMetadata.remainingData ? fileMetadata.remainingData.byteLength : 0;
+    
+    const totalSize = fileMetadata.headerOffset + headerSize + garbageLenSize + garbageDataSize + metaSize + animDataSize + footerSize;
+    const buffer = new ArrayBuffer(totalSize);
+    const view = new DataView(buffer);
+    
+    let ptr = 0;
+    if(fileMetadata.headerOffset > 0 && rawBuffer) {
+        new Uint8Array(buffer).set(new Uint8Array(rawBuffer.slice(0, fileMetadata.headerOffset)), 0);
+        ptr += fileMetadata.headerOffset;
+    }
+
+    view.setBigUint64(ptr, fileMetadata.header || MAGIC_NUMBER_BIGINT, true); ptr += 8;
+    view.setInt16(ptr, fileMetadata.garbageSize, true); ptr += 2;
+    if(fileMetadata.garbageData) {
+        new Uint8Array(buffer).set(new Uint8Array(fileMetadata.garbageData), ptr);
+        ptr += garbageDataSize;
+    }
+
+    view.setUint32(ptr, animationFrames.length, true); ptr += 4;
+    view.setUint16(ptr, fileMetadata.boneCount, true); ptr += 2;
+
+    fileMetadata.boneIds.forEach(id => { view.setUint16(ptr, id, true); ptr += 2; });
+
+    animationFrames.forEach(frame => {
+        fileMetadata.boneIds.forEach(id => {
+            const vec = frame[id]; 
+            const x = vec ? vec.x : 0; const y = vec ? vec.y : 0; const z = vec ? vec.z : 0;
+            view.setInt16(ptr, float32ToFloat16(x), true);
+            view.setInt16(ptr+2, float32ToFloat16(y), true);
+            view.setInt16(ptr+4, float32ToFloat16(z), true);
+            ptr += 6;
+            if(vec && vec.userData.rotBytes) new Uint8Array(buffer).set(vec.userData.rotBytes, ptr);
+            else for(let k=0; k<6; k++) view.setUint8(ptr+k, 0);
+            ptr += 6;
+        });
+    });
+
+    if(fileMetadata.remainingData) new Uint8Array(buffer).set(new Uint8Array(fileMetadata.remainingData), ptr);
+    return buffer;
+}
+
+function setupUI() {
     document.getElementById('file-input').addEventListener('change', e=>{
         const file = e.target.files[0];
         if(!file) return;
+        loadedFileName = file.name;
         const reader = new FileReader();
         reader.onload = evt => {
             rawBuffer = evt.target.result;
-            
-            // Auto-scan removed. Defaulting offset to 0.
             document.getElementById('offset-input').value = 0;
-            log("File loaded. Defaulting header offset to 0.", "info");
-            
             reparseCurrentBuffer();
         };
         reader.readAsArrayBuffer(file);
     });
 
-    document.getElementById('timeline').addEventListener('input', e=>{
-        isPlaying=false;
-        currentFrame = parseInt(e.target.value);
-        updateSkeletonPose(currentFrame);
-        document.getElementById('frame-counter').innerText = `Frame: ${currentFrame} / ${animationFrames.length-1}`;
-    });
-    
     document.getElementById('play-btn').addEventListener('click', ()=>{
         isPlaying = !isPlaying;
-        document.getElementById('play-btn').innerText = isPlaying ? "PAUSE" : "PLAY";
+        document.getElementById('play-btn').innerText = isPlaying ? "◼" : "▶";
     });
     
-    // Rerun parse when scale factor is changed
-    document.getElementById('scale-factor-input').addEventListener('change', reparseCurrentBuffer);
+    document.getElementById('stop-btn').addEventListener('click', ()=>{
+        isPlaying = false;
+        currentFrame = 0;
+        updateUIForFrame(0);
+        document.getElementById('play-btn').innerText = "▶";
+    });
+
+    document.getElementById('sidebar-toggle').addEventListener('click', ()=>{
+        const sidebar = document.getElementById('sidebar');
+        sidebar.classList.toggle('collapsed');
+        
+        const btn = document.getElementById('sidebar-toggle');
+        btn.innerText = sidebar.classList.contains('collapsed') ? "▶" : "◀";
+        
+        // Fix 1 & 2: Ensure the 3D viewer and camera resize immediately after the sidebar animation
+        // We use a timeout to give the CSS transition time to complete
+        setTimeout(onWindowResize, 350); 
+    });
+
+    document.getElementById('edit-mode-btn').addEventListener('click', toggleEditMode);
+    document.getElementById('undo-btn').addEventListener('click', performUndo);
+    document.getElementById('tick-btn').addEventListener('click', saveProgress);
+    document.getElementById('export-btn').addEventListener('click', exportBytes);
 }
 
-initViewer();
+document.addEventListener('DOMContentLoaded', initViewer);
 </script>
 </body>
 </html>
