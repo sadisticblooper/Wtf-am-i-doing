@@ -29,29 +29,26 @@
             flex-direction: column; 
             padding: 10px;
             z-index: 20;
-            transition: margin-left 0.3s ease, min-width 0.3s ease; /* Use margin to push content */
+            transition: margin-left 0.3s ease, min-width 0.3s ease; 
             height: 100%; 
             overflow-y: auto; 
-            /* Fix 2: Start with margin-left: 0 when open */
             margin-left: 0; 
-            position: relative; /* Needs position for the margin trick to work cleanly */
+            position: relative; 
         }
 
-        /* Fix 2: Collapse by moving the sidebar entirely out of the flow using negative margin */
         #sidebar.collapsed {
             margin-left: -360px; 
             min-width: 0;
             width: 0;
-            padding: 0; /* Remove padding when collapsed */
+            padding: 0;
             border-right: none;
         }
 
         /* Toggle Button */
         #sidebar-toggle {
-            /* Fix 2: This button must now be positioned relative to the sidebar's edge */
             position: absolute; 
             top: 50%;
-            right: -24px; /* Sticks to the right edge of the 360px sidebar */
+            right: -24px; 
             transform: translateY(-50%);
             width: 24px;
             height: 48px;
@@ -66,32 +63,30 @@
             color: #81d4fa;
             font-size: 12px;
             z-index: 21;
-            transition: right 0.3s ease, margin-left 0.3s ease;
+            transition: left 0.3s ease, margin-left 0.3s ease;
         }
         #sidebar-toggle:hover { background: #2a2a2a; color: white; }
         
-        /* Fix 2: Move button to the left edge of the screen when sidebar is collapsed */
         #sidebar.collapsed #sidebar-toggle {
-            right: -24px; /* Stays at the edge of the collapsed 0-width sidebar */
-            position: fixed; /* Switch to fixed position relative to viewport */
+            right: -24px; 
+            position: fixed; 
             left: 0;
             transform: translateY(-50%);
         }
 
         /* Right: Main Content (Canvas + Timeline) */
         #main-content {
-            /* Fix 2: Takes all remaining space */
             flex-grow: 1;
             display: flex;
             flex-direction: column;
             position: relative;
             background: #000;
-            min-width: 0; /* Ensures it shrinks correctly in flex layout */
+            min-width: 0;
         }
 
         /* 3D Viewport */
         #canvas-wrapper {
-            flex-grow: 1; /* Takes all available height above timeline */
+            flex-grow: 1; 
             position: relative;
             background: radial-gradient(circle at center, #1a1a1a 0%, #000000 100%);
             overflow: hidden;
@@ -100,7 +95,7 @@
 
         /* Timeline Footer */
         #timeline-wrapper {
-            height: 140px; /* Fixed height for editor feel */
+            height: 140px; 
             min-height: 140px;
             background: #181818;
             border-top: 1px solid #333;
@@ -114,17 +109,14 @@
             height: 36px;
             background: #252525;
             display: flex;
-            /* Fix 3: Center align content */
             align-items: center;
-            /* Fix 3: Use justify-content for centering/spacing */
             justify-content: center; 
             padding: 0 10px;
             gap: 15px;
             border-bottom: 1px solid #333;
-            position: relative; /* For absolute positioning of time display */
+            position: relative; 
         }
 
-        /* Fix 3: Place time display on the right edge */
         #time-display { 
             position: absolute;
             right: 15px;
@@ -230,8 +222,12 @@
         <div class="panel">
             <h3>3. Settings</h3>
             <div class="control-group">
-                <label>Pos Scale:</label>
+                <label>Pos Scale (Read):</label>
                 <input type="number" id="scale-factor-input" value="100000.0" step="100.0">
+            </div>
+            <div class="control-group">
+                <label>Export Multiplier (Write):</label>
+                <input type="number" id="export-multiplier-input" value="20.0" step="1.0">
             </div>
             <div class="control-group">
                 <label>Header Offset:</label>
@@ -379,11 +375,19 @@ function readFloat16(view, offset, littleEndian, scale) {
     return shortValue / scale;
 }
 
+// ✅ UPDATED FUNCTION: Applies Export Multiplier to the value before scaling to Int16
 function float32ToFloat16(value) {
     const SCALE_FACTOR = parseFloat(document.getElementById('scale-factor-input').value) || 100000.0;
-    let intVal = Math.round(value * SCALE_FACTOR);
+    const EXPORT_MULTIPLIER = parseFloat(document.getElementById('export-multiplier-input').value) || 20.0;
+
+    // Apply the multiplier to the position value (x, y, or z)
+    const multipliedValue = value * EXPORT_MULTIPLIER;
+    
+    let intVal = Math.round(multipliedValue * SCALE_FACTOR);
+
     if(intVal > 32767) intVal = 32767;
     if(intVal < -32768) intVal = -32768;
+    
     return intVal;
 }
 
@@ -415,6 +419,7 @@ function reparseCurrentBuffer() {
 function parseAnimationData(buffer) {
     const view = new DataView(buffer);
     let offset = parseInt(document.getElementById('offset-input').value) || 0;
+    // Scale factor is only used here for reading
     const scaleFactor = parseFloat(document.getElementById('scale-factor-input').value) || 100000.0;
     
     // Simple metadata object
@@ -450,6 +455,7 @@ function parseAnimationData(buffer) {
         if (readPtr + frameSize > buffer.byteLength) break;
         const frameData = {}; 
         for (let b = 0; b < boneCount; b++) {
+            // readFloat16 uses the scaleFactor
             const posX = readFloat16(view, readPtr, true, scaleFactor);
             const posY = readFloat16(view, readPtr + 2, true, scaleFactor);
             const posZ = readFloat16(view, readPtr + 4, true, scaleFactor);
@@ -476,7 +482,7 @@ function initViewer() {
     const height = container.clientHeight;
 
     scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x111111); // Fallback color
+    scene.background = new THREE.Color(0x111111); 
 
     camera = new THREE.PerspectiveCamera(60, width / height, 0.1, 1000);
     camera.position.set(0, 100, 400); 
@@ -526,7 +532,6 @@ function onWindowResize() {
     const w = wrapper.clientWidth;
     const h = wrapper.clientHeight;
     
-    // Fix 1: Update camera aspect ratio immediately when the canvas size changes
     camera.aspect = w / h; 
     camera.updateProjectionMatrix();
     
@@ -720,10 +725,6 @@ function drawTimeline() {
     
     if(totalFrames === 0) return;
 
-    // Center the current frame? Or standard scroll? 
-    // Let's keep it simple: timeline starts at tlScrollX
-    // But we want to auto-scroll if playing
-    
     // Ruler Background
     tlCtx.fillStyle = '#252525';
     tlCtx.fillRect(0, 0, w, 25);
@@ -910,6 +911,7 @@ function exportBytes() {
     }
 }
 
+// ✅ UPDATED FUNCTION: Calls the updated float32ToFloat16
 function reconstructBinary() {
     // Rebuild logic
     const headerSize = 8;
@@ -945,11 +947,16 @@ function reconstructBinary() {
     animationFrames.forEach(frame => {
         fileMetadata.boneIds.forEach(id => {
             const vec = frame[id]; 
-            const x = vec ? vec.x : 0; const y = vec ? vec.y : 0; const z = vec ? vec.z : 0;
+            const x = vec ? vec.x : 0; 
+            const y = vec ? vec.y : 0; 
+            const z = vec ? vec.z : 0;
+            
+            // This call now applies the Export Multiplier
             view.setInt16(ptr, float32ToFloat16(x), true);
             view.setInt16(ptr+2, float32ToFloat16(y), true);
             view.setInt16(ptr+4, float32ToFloat16(z), true);
             ptr += 6;
+            
             if(vec && vec.userData.rotBytes) new Uint8Array(buffer).set(vec.userData.rotBytes, ptr);
             else for(let k=0; k<6; k++) view.setUint8(ptr+k, 0);
             ptr += 6;
@@ -993,8 +1000,6 @@ function setupUI() {
         const btn = document.getElementById('sidebar-toggle');
         btn.innerText = sidebar.classList.contains('collapsed') ? "▶" : "◀";
         
-        // Fix 1 & 2: Ensure the 3D viewer and camera resize immediately after the sidebar animation
-        // We use a timeout to give the CSS transition time to complete
         setTimeout(onWindowResize, 350); 
     });
 
