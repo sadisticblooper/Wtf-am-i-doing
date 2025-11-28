@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Animation Editor V3 (Diagnostic Mode)</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #121212; font-family: 'Consolas', 'Monaco', monospace; color: white; }
+        
+        /* Layout */
+        #container { display: flex; height: 100vh; }
+        #canvas-wrapper { flex-grow: 1; position: relative; }
+        #sidebar { 
+            width: 400px; 
+            background: #1e1e1e; 
+            border-left: 1px solid #333; 
+            display: flex; 
+            flex-direction: column; 
+            padding: 10px;
+            box-shadow: -5px 0 15px rgba(0,0,0,0.5);
+            z-index: 20;
+            overflow-y: auto;
+        }
+
+        /* Panels */
+        .panel { background: #2a2a2a; border-radius: 6px; padding: 10px; margin-bottom: 10px; border: 1px solid #333; }
+        .panel h3 { margin: 0 0 10px 0; font-size: 14px; color: #81d4fa; text-transform: uppercase; border-bottom: 1px solid #444; padding-bottom: 5px; }
+        
+        /* Controls */
+        .control-group { margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between; font-size: 12px; }
+        .control-group label { color: #aaa; }
+        input[type="number"] { width: 60px; background: #333; border: 1px solid #555; color: white; padding: 2px 5px; }
+        
+        button {
+            width: 100%; padding: 8px; background: #0d47a1; color: white; border: none; border-radius: 4px; cursor: pointer; margin-bottom: 5px; font-weight: bold;
+        }
+        button:hover { background: #1565c0; }
+        button.secondary { background: #424242; }
+        button.danger { background: #c62828; }
+
+        /* Log */
+        #log-output {
+            height: 150px; background: #111; border: 1px solid #333; 
+            overflow-y: auto; font-size: 11px; padding: 5px; color: #ccc;
+        }
+        .log-err { color: #ff5252; }
+        .log-suc { color: #69f0ae; }
+        .log-warn { color: #ffd740; }
+
+        /* Timeline */
+        #timeline-panel { position: absolute; bottom: 20px; left: 20px; right: 440px; }
+        input[type="range"] { width: 100%; }
+        
+        #load-area { border: 2px dashed #444; padding: 20px; text-align: center; color: #888; border-radius: 8px; cursor: pointer; transition: 0.2s; }
+        #load-area:hover { border-color: #0d47a1; color: white; background: #1a237e; }
+
+    </style>
+</head>
+<body>
+
+<div id="container">
+    <div id="canvas-wrapper">
+        <div id="canvas-container"></div>
+        <div id="timeline-panel" class="panel">
+            <div class="control-group">
+                <button id="play-btn" class="secondary" style="width: 80px;">PLAY</button>
+                <span id="frame-counter">Frame: 0 / 0</span>
+                <span>Speed: <span id="fps-display">30</span> FPS</span>
+            </div>
+            <input type="range" id="timeline" min="0" max="0" value="0" step="1">
+        </div>
+    </div>
+
+    <div id="sidebar">
+        <div class="panel">
+            <h3>1. Load File</h3>
+            <div id="load-area" onclick="document.getElementById('file-input').click()">
+                Click to Upload Animation<br>(.bytes, .dat)
+            </div>
+            <input type="file" id="file-input" style="display: none;">
+        </div>
+
+        <div class="panel">
+            <h3>2. Parser Settings</h3>
+            <div class="control-group">
+                <label>Header Offset (Bytes):</label>
+                <input type="number" id="offset-input" value="0">
+            </div>
+             <div class="control-group">
+                <label>Position Scale Factor:</label>
+                <input type="number" id="scale-factor-input" value="100000.0" step="100.0">
+            </div>
+            <div class="control-group">
+                <label>Forced Frame Count:</label>
+                <input type="number" id="force-frames" placeholder="Auto">
+            </div>
+             <div class="control-group">
+                <label>Forced Bone Count:</label>
+                <input type="number" id="force-bones" placeholder="Auto">
+            </div>
+            <div class="control-group">
+                <label>Little Endian?</label>
+                <input type="checkbox" id="endian-check" checked>
+            </div>
+            <button onclick="reparseCurrentBuffer()" class="secondary">Retry Parse with Settings</button>
+        </div>
+
+        <div class="panel" style="flex-grow: 1;">
+            <h3>System Log</h3>
+            <div id="log-output"></div>
+        </div>
+    </div>
+</div>
+
+<script>
+// ==========================================
+// 1. CONSTANTS
+// ==========================================
+const MAGIC_NUMBER_BIGINT = 457546134634734n; // 0x0001A044B1E612E (approx)
+const BONE_MAP = {
+    0: "pelvis", 1: "stomach", 2: "chest", 3: "neck", 4: "head", 5: "hair", 6: "hair1",
+    7: "zero_joint_hand_l", 8: "clavicle_l", 9: "arm_l", 10: "forearm_l",
+    11: "forearm_twist_l", 12: "hand_l", 13: "weapon_l", 14: "f_big1_l", 15: "f_big2_l", 16: "f_big3_l",
+    17: "f_main1_l", 18: "f_main2_l", 19: "f_main3_l", 20: "f_pointer1_l", 21: "f_pointer2_l", 22: "f_pointer3_l",
+    23: "scapular_l", 24: "chest_l", 25: "zero_joint_hand_r", 26: "clavicle_r", 27: "arm_r", 28: "forearm_r",
+    29: "forearm_twist_r", 30: "hand_r", 31: "weapons_r", 32: "f_big1_r", 33: "f_big2_r", 34: "f_big3_r",
+    35: "f_main1_r", 36: "f_main2_r", 37: "f_main3_r", 38: "f_pointer1_r", 39: "f_pointer2_r", 40: "f_pointer3_r",
+    41: "zero_joint_pelvis_l", 42: "thigh_l", 43: "calf_l", 44: "foot_l", 45: "toe_l", 46: "back_l",
+    47: "zero_joint_pelvis_r", 48: "thigh_r", 49: "calf_r", 50: "foot_r", 51: "toe_r", 52: "back_r",
+    53: "biceps_twist_l", 54: "biceps_twist_r", 55: "item_l", 56: "item_r",
+    57: "thigh_twist_l", 58: "thigh_twist_r" // Added missing bones
+};
+
+// UPDATED: T-Pose data corrected using positions from xecaultve.txt
+const DEFAULT_SKELETON_TXT = `
+"pelvis" [BONE] | G.Pos:(-105.750, 80.938, -7.070)
+  "zero_joint_pelvis_l" [BONE] | G.Pos:(-105.750, 80.938, -7.070)
+    "thigh_l" [BONE] | G.Pos:(-114.096, 82.097, -10.787)
+      "calf_l" [BONE] | G.Pos:(-148.211, 49.767, 3.287)
+        "foot_l" [BONE] | G.Pos:(-152.879, 12.394, -13.223)
+          "toe_l" [BONE] | G.Pos:(-165.312, 2.301, -0.156)
+      "thigh_twist_l" [BONE] | G.Pos:(-126.585, 69.701, -6.025)
+    "back_l" [BONE] | G.Pos:(-109.283, 77.661, -19.888)
+  "stomach" [BONE] | G.Pos:(-105.452, 91.816, -5.262)
+    "chest" [BONE] | G.Pos:(-104.960, 109.559, -5.274)
+      "zero_joint_hand_l" [BONE] | G.Pos:(-104.960, 109.559, -5.274)
+        "chest_l" [BONE] | G.Pos:(-123.178, 114.886, 4.693)
+        "clavicle_l" [BONE] | G.Pos:(-111.292, 133.672, -3.881)
+          "arm_l" [BONE] | G.Pos:(-124.895, 127.953, -14.988)
+            "biceps_twist_l" [BONE] | G.Pos:(-129.133, 115.620, -19.839)
+            "forearm_l" [BONE] | G.Pos:(-133.711, 102.290, -25.084)
+              "hand_l" [BONE] | G.Pos:(-151.939, 93.721, -10.975)
+                "f_big1_l" [BONE] | G.Pos:(-155.718, 97.132, -7.692)
+                  "f_big2_l" [BONE] | G.Pos:(-157.912, 97.698, -4.502)
+                    "f_big3_l" [BONE] | G.Pos:(-159.856, 94.621, -2.271)
+                "f_pointer1_l" [BONE] | G.Pos:(-163.386, 95.563, -8.128)
+                  "f_pointer2_l" [BONE] | G.Pos:(-163.214, 94.173, -3.901)
+                    "f_pointer3_l" [BONE] | G.Pos:(-159.925, 95.151, -3.850)
+                "weapon_l" [BONE] | G.Pos:(-159.918, 92.167, -6.401)
+                "f_main1_l" [BONE] | G.Pos:(-162.706, 90.379, -9.055)
+                  "f_main2_l" [BONE] | G.Pos:(-160.501, 90.364, -4.597)
+                    "f_main3_l" [BONE] | G.Pos:(-156.227, 92.275, -5.487)
+      "zero_joint_hand_r" [BONE] | G.Pos:(-104.960, 109.558, -5.274)
+        "clavicle_r" [BONE] | G.Pos:(-107.850, 134.073, -1.510)
+          "arm_r" [BONE] | G.Pos:(-94.099, 133.060, 10.778)
+            "biceps_twist_r" [BONE] | G.Pos:(-85.253, 122.926, 14.328)
+            "forearm_r" [BONE] | G.Pos:(-75.690, 111.971, 18.161)
+              "hand_r" [BONE] | G.Pos:(-97.553, 103.356, 25.405)
+                "weapon_r" [BONE] | G.Pos:(-106.350, 100.134, 24.666)
+                "f_big1_r" [BONE] | G.Pos:(-93.684, 98.673, 29.832)
+                  "f_big2_r" [BONE] | G.Pos:(-92.352, 98.711, 33.197)
+                    "f_big3_r" [BONE] | G.Pos:(-91.248, 96.657, 34.694)
+                "f_pointer1_r" [BONE] | G.Pos:(-95.957, 96.687, 29.815)
+                  "f_pointer2_r" [BONE] | G.Pos:(-97.689, 95.275, 33.869)
+                    "f_pointer3_r" [BONE] | G.Pos:(-99.648, 96.229, 34.425)
+                "f_main1_r" [BONE] | G.Pos:(-99.168, 92.937, 27.696)
+                  "f_main2_r" [BONE] | G.Pos:(-100.419, 93.308, 31.579)
+                    "f_main3_r" [BONE] | G.Pos:(-102.399, 95.340, 31.905)
+      "scapular_r" [BONE] | G.Pos:(-98.689, 139.613, 10.348)
+      "chest_r" [BONE] | G.Pos:(-108.722, 116.571, 14.634)
+    "neck" [BONE] | G.Pos:(-109.693, 138.257, -3.259)
+      "head" [BONE] | G.Pos:(-114.417, 149.774, -0.739)
+        "hair" [BONE] | G.Pos:(-114.417, 149.774, -0.739)
+        "hair1" [BONE] | G.Pos:(-114.417, 149.774, -0.739)
+    "zero_joint_pelvis_r" [BONE] | G.Pos:(-105.750, 80.938, -7.070)
+      "thigh_r" [BONE] | G.Pos:(-97.404, 82.097, -10.787)
+        "calf_r" [BONE] | G.Pos:(-63.289, 49.767, 3.287)
+          "foot_r" [BONE] | G.Pos:(-58.621, 12.394, -13.223)
+            "toe_r" [BONE] | G.Pos:(-46.188, 2.301, -0.156)
+        "thigh_twist_r" [BONE] | G.Pos:(-78.915, 69.701, -6.025)
+      "back_r" [BONE] | G.Pos:(-102.217, 77.661, -19.888)
+`;
+
+// ==========================================
+// 2. UTILS
+// ==========================================
+function log(msg, type="info") {
+    const d = document.getElementById('log-output');
+    const e = document.createElement('div');
+    e.className = `log-${type}`;
+    e.innerText = `> ${msg}`;
+    d.appendChild(e);
+    d.scrollTop = d.scrollHeight;
+}
+
+// Fixed-point decoding based on analysis of related files (reading signed 16-bit integer and scaling)
+function readFloat16(view, offset, littleEndian) {
+    if(offset + 2 > view.byteLength) return 0;
+    
+    // Read as signed 16-bit integer (short)
+    const shortValue = view.getInt16(offset, littleEndian);
+    
+    // Read dynamically from UI input, falling back to the discovered 100000.0
+    const SCALE_FACTOR = parseFloat(document.getElementById('scale-factor-input').value) || 100000.0;
+    
+    return shortValue / SCALE_FACTOR;
+}
+
+// ==========================================
+// 3. PARSER
+// ==========================================
+let rawBuffer = null;
+
+function reparseCurrentBuffer() {
+    if(!rawBuffer) { log("No file loaded.", "err"); return; }
+    try {
+        const frames = parseAnimationData(rawBuffer);
+        animationFrames = frames;
+        
+        document.getElementById('timeline').max = frames.length - 1;
+        document.getElementById('frame-counter').innerText = `Frame: 0 / ${frames.length-1}`;
+        currentFrame = 0;
+        updateSkeletonPose(0);
+        log(`Parse Successful! Loaded ${frames.length} frames.`, "suc");
+    } catch(e) {
+        log(e.message, "err");
+    }
+}
+
+function parseAnimationData(buffer) {
+    const view = new DataView(buffer);
+    const littleEndian = document.getElementById('endian-check').checked;
+    let offset = parseInt(document.getElementById('offset-input').value) || 0;
+    
+    log(`Parsing starting at Offset: ${offset}`, "info");
+
+    // 1. Header verification and initial read pointer
+    if (view.byteLength < offset + 14) {
+        throw new Error("File too short for minimum header size.");
+    }
+
+    try {
+        const header = view.getBigUint64(offset, littleEndian);
+        if(header !== MAGIC_NUMBER_BIGINT) {
+            log(`Header at ${offset} is ${header} (Expected ${MAGIC_NUMBER_BIGINT}). Proceeding anyway...`, "warn");
+        } else {
+            log("Magic Number verified.", "suc");
+        }
+    } catch(e) { log("Could not read header (8 bytes).", "warn"); }
+
+    let readPtr = offset + 8; // Move past 8-byte Magic Number
+
+    // 2. Metadata (Corrected Logic based on flexible header analysis)
+    let framesLength, boneCount;
+    
+    // Read garbage size (2 bytes)
+    const garbageSize = view.getInt16(readPtr, littleEndian);
+    readPtr += 2;
+    log(`Read Garbage Size: ${garbageSize}`, "info");
+
+    // Skip garbage data (garbageSize * 8 bytes)
+    readPtr += (garbageSize * 8);
+
+    if (readPtr + 6 > view.byteLength) { // Check if we have enough space for frame count (4) + bone count (2)
+        throw new Error(`EOF reached while attempting to read frame count at offset ${readPtr}.`);
+    }
+
+    // Check for Manual Overrides
+    const forceFrames = document.getElementById('force-frames').value;
+    const forceBones = document.getElementById('force-bones').value;
+
+    if(forceFrames) {
+        framesLength = parseInt(forceFrames);
+        log(`Using Forced Frames: ${framesLength}`, "info");
+    } else {
+        // Read Frames Count (4 bytes, Int32/Uint32 is suitable for count)
+        framesLength = view.getUint32(readPtr, littleEndian);
+        readPtr += 4;
+        log(`Read Frames Count: ${framesLength}`, "info");
+    }
+
+    if(forceBones) {
+        boneCount = parseInt(forceBones);
+        log(`Using Forced Bones: ${boneCount}`, "info");
+    } else {
+        // Read Bone Count (2 bytes, Uint16)
+        boneCount = view.getUint16(readPtr, littleEndian);
+        readPtr += 2;
+        log(`Read Bone Count: ${boneCount}`, "info");
+    }
+    
+    // SANITY CHECKS
+    if(framesLength > 100000 || framesLength < 0) throw new Error(`Insane Frame Count: ${framesLength}. Wrong Offset or Endianness?`);
+    if(boneCount > 500 || boneCount <= 0) throw new Error(`Insane Bone Count: ${boneCount}. Wrong Offset?`);
+
+    // 3. Bone IDs
+    const boneIds = [];
+    
+    if (readPtr + (boneCount * 2) > view.byteLength) {
+        throw new Error("EOF reached while attempting to read Bone IDs.");
+    }
+
+    for (let i = 0; i < boneCount; i++) {
+        boneIds.push(view.getUint16(readPtr, littleEndian));
+        readPtr += 2;
+    }
+
+    // 4. Data
+    const frames = [];
+    const frameSize = boneCount * 12; // 3 pos (2 bytes each) + 6 bytes of padding/rotation data = 12 bytes per bone
+
+    for (let f = 0; f < framesLength; f++) {
+        if (readPtr + frameSize > buffer.byteLength) {
+            log(`Stopped early at frame ${f} (EOF).`, "warn");
+            break;
+        }
+
+        const frameData = {};
+        for (let b = 0; b < boneCount; b++) {
+            const posX = readFloat16(view, readPtr, littleEndian);
+            const posY = readFloat16(view, readPtr + 2, littleEndian);
+            const posZ = readFloat16(view, readPtr + 4, littleEndian);
+            
+            const boneId = boneIds[b];
+            // NOTE: Only position data is read (6 bytes are skipped), assuming rotation/scale is not necessary for this debug view
+            frameData[boneId] = new THREE.Vector3(posX, posY, posZ);
+
+            readPtr += 12; // 6 bytes pos + 6 bytes rot/padding
+        }
+        frames.push(frameData);
+    }
+
+    return frames;
+}
+
+
+// ==========================================
+// 4. VIEWER
+// ==========================================
+let scene, camera, renderer, controls; // 'controls' declared globally
+let skeletonNodes = [], skeletonLines = [];
+let animationFrames = [];
+let isPlaying = false;
+let currentFrame = 0;
+let playbackSpeed = 30;
+let lastTime = 0;
+let skeletonData = [];
+
+function initViewer() {
+    const container = document.getElementById('canvas-container');
+    
+    // Initial dimensions (needed to create renderer)
+    const initialWidth = window.innerWidth - 420; // Sidebar width 400 + padding
+    const initialHeight = window.innerHeight;
+
+    scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x111111);
+
+    camera = new THREE.PerspectiveCamera(60, initialWidth / initialHeight, 0.1, 1000);
+    // Camera position set for a good initial view
+    camera.position.set(0, 100, 400); 
+    camera.lookAt(0, 100, 0); 
+
+    renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(initialWidth, initialHeight);
+    container.appendChild(renderer.domElement);
+    
+    // OrbitControls Setup
+    controls = new THREE.OrbitControls(camera, renderer.domElement);
+    controls.target.set(0, 100, 0); // Focus on the center of the skeleton (approx)
+    controls.enableDamping = true; // Smooth camera movements
+    controls.dampingFactor = 0.05;
+    controls.screenSpacePanning = true; // Allows panning in all directions
+    controls.update();
+    
+    // Resize handler
+    window.addEventListener('resize', onWindowResize, false);
+    function onWindowResize() {
+        const width = container.offsetWidth;
+        const height = container.offsetHeight;
+        camera.aspect = width / height;
+        camera.updateProjectionMatrix();
+        renderer.setSize(width, height);
+    }
+
+    const grid = new THREE.GridHelper(500, 50, 0x333333, 0x222222);
+    scene.add(grid);
+    scene.add(new THREE.AxesHelper(50)); 
+    
+    const light = new THREE.DirectionalLight(0xffffff, 1);
+    light.position.set(50, 200, 100);
+    scene.add(light);
+    scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+
+    // Load Default Skeleton
+    skeletonData = parseSkeletonText(DEFAULT_SKELETON_TXT);
+    buildSkeletonVisuals();
+
+    // Controls for UI (not camera)
+    setupControls();
+
+    requestAnimationFrame(animate);
+    
+    log("System Ready. Upload a file.", "suc");
+}
+
+function parseSkeletonText(txt) {
+    const lines = txt.split('\n');
+    const skel = [];
+    let stack = [];
+    lines.forEach(line => {
+        if(!line.trim()) return;
+        const indent = line.match(/^(\s*)/)[1].length / 2;
+        const nameMatch = line.match(/"([^"]+)"/);
+        const posMatch = line.match(/G\.Pos:\(([^,]+),\s*([^,]+),\s*([^)]+)\)/);
+        if(nameMatch && posMatch) {
+            const name = nameMatch[1];
+            const node = {
+                name: name,
+                initialPos: new THREE.Vector3(parseFloat(posMatch[1]), parseFloat(posMatch[2]), parseFloat(posMatch[3])),
+                parentIndex: -1,
+                boneId: -1
+            };
+            for(const [id, val] of Object.entries(BONE_MAP)) {
+                if(val === name) { node.boneId = parseInt(id); break; }
+            }
+            if(indent > 0) {
+                while(stack.length > indent) stack.pop();
+                if(stack.length > 0) node.parentIndex = stack[stack.length-1];
+            } else stack = [];
+            skel.push(node);
+            stack.push(skel.length-1);
+        }
+    });
+    return skel;
+}
+
+function buildSkeletonVisuals() {
+    skeletonNodes.forEach(n => scene.remove(n));
+    skeletonLines.forEach(l => scene.remove(l));
+    skeletonNodes = []; skeletonLines = [];
+
+    // Sphere radius reduced from 5 to 2.5
+    const geo = new THREE.SphereGeometry(2.0, 8, 8);
+    const mat = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
+    const lineMat = new THREE.LineBasicMaterial({ color: 0xcccccc, transparent: true, opacity: 0.8 }); 
+
+    skeletonData.forEach((bone, i) => {
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.position.copy(bone.initialPos);
+        mesh.userData = { ...bone, originalPos: bone.initialPos.clone() };
+        scene.add(mesh);
+        skeletonNodes.push(mesh);
+
+        if(bone.parentIndex !== -1) {
+            const lineGeo = new THREE.BufferGeometry().setFromPoints([
+                skeletonNodes[bone.parentIndex].position, mesh.position
+            ]);
+            const line = new THREE.Line(lineGeo, lineMat);
+            line.userData = { parent: bone.parentIndex, child: i };
+            scene.add(line);
+            skeletonLines.push(line);
+        }
+    });
+}
+
+function updateSkeletonPose(frameIdx) {
+    if(!animationFrames[frameIdx]) return;
+    const frameData = animationFrames[frameIdx];
+    
+    // Pelvis logic: ID 0 is global mover (translation offset)
+    const globalOffset = frameData[0] ? frameData[0].clone() : new THREE.Vector3();
+
+    skeletonNodes.forEach(node => {
+        const id = node.userData.boneId;
+        const pos = node.userData.originalPos.clone(); // Start at T-Pose
+
+        // 1. Add specific bone animation (displacement from T-Pose)
+        if(frameData[id]) pos.add(frameData[id]);
+
+        // 2. Add Pelvis Global Motion (except to pelvis itself, which already has the animation data)
+        if(id !== 0) pos.add(globalOffset); 
+
+        node.position.copy(pos);
+    });
+
+    skeletonLines.forEach(line => {
+        const p = skeletonNodes[line.userData.parent].position;
+        const c = skeletonNodes[line.userData.child].position;
+        const pos = line.geometry.attributes.position.array;
+        pos[0]=p.x; pos[1]=p.y; pos[2]=p.z;
+        pos[3]=c.x; pos[4]=c.y; pos[5]=c.z;
+        line.geometry.attributes.position.needsUpdate = true;
+    });
+}
+
+function animate(time) {
+    requestAnimationFrame(animate);
+    
+    // Update controls for smooth camera damping/inertia
+    if(controls) controls.update(); 
+    
+    if(isPlaying && animationFrames.length > 0) {
+        // Run at ~30 FPS
+        if(time - lastTime > (1000/30)) { 
+            currentFrame = (currentFrame + 1) % animationFrames.length;
+            updateSkeletonPose(currentFrame);
+            document.getElementById('timeline').value = currentFrame;
+            document.getElementById('frame-counter').innerText = `Frame: ${currentFrame} / ${animationFrames.length-1}`;
+            lastTime = time;
+        }
+    }
+    renderer.render(scene, camera);
+}
+
+function setupControls() {
+    document.getElementById('file-input').addEventListener('change', e=>{
+        const file = e.target.files[0];
+        if(!file) return;
+        const reader = new FileReader();
+        reader.onload = evt => {
+            rawBuffer = evt.target.result;
+            
+            // Auto-scan removed. Defaulting offset to 0.
+            document.getElementById('offset-input').value = 0;
+            log("File loaded. Defaulting header offset to 0.", "info");
+            
+            reparseCurrentBuffer();
+        };
+        reader.readAsArrayBuffer(file);
+    });
+
+    document.getElementById('timeline').addEventListener('input', e=>{
+        isPlaying=false;
+        currentFrame = parseInt(e.target.value);
+        updateSkeletonPose(currentFrame);
+        document.getElementById('frame-counter').innerText = `Frame: ${currentFrame} / ${animationFrames.length-1}`;
+    });
+    
+    document.getElementById('play-btn').addEventListener('click', ()=>{
+        isPlaying = !isPlaying;
+        document.getElementById('play-btn').innerText = isPlaying ? "PAUSE" : "PLAY";
+    });
+    
+    // Rerun parse when scale factor is changed
+    document.getElementById('scale-factor-input').addEventListener('change', reparseCurrentBuffer);
+}
+
+initViewer();
+</script>
+</body>
+</html>
