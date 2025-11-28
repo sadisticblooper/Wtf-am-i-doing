@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Animation Editor V6 (Scale Factor 15000)</title>
+    <title>Animation Editor V6 (Scale Factor 3.2767)</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/TransformControls.js"></script>
@@ -81,7 +81,7 @@
             <h3>3. Settings</h3>
             <div class="control-group">
                 <label>Pos Scale (Read/Write):</label>
-                <input type="number" id="scale-factor-input" value="15000.0" step="1.0">
+                <input type="number" id="scale-factor-input" value="3.2767" step="0.0001">
             </div>
             <div class="control-group">
                 <label>Export Multiplier (Write):</label>
@@ -93,7 +93,7 @@
             </div>
             <button onclick="reparseCurrentBuffer()" class="action-btn" style="background:#444;">↻ Reload Data</button>
             <div style="font-size: 11px; color: #ffeb3b; margin-top: 5px; text-align: center;">
-                ⚠️ Max editable displacement is ~2.18 units. Larger changes will be clamped.
+                ⚠️ Max editable displacement is ~10000 units. Changes beyond this will lose precision.
             </div>
         </div>
 
@@ -246,8 +246,10 @@ function float32ToRawInt16(value, scaleFactor, exportMultiplier) {
     
     let intVal = Math.round(multipliedValue * scaleFactor);
 
-    if(intVal > 32767) intVal = 32767;
-    if(intVal < -32768) intVal = -32768;
+    // Removed explicit clamping. With scaleFactor=3.2767, up to ~10000 units is safe.
+    // DataView.setInt16 will handle the final conversion/clamping.
+    // if(intVal > 32767) intVal = 32767;
+    // if(intVal < -32768) intVal = -32768;
     
     return intVal;
 }
@@ -286,8 +288,8 @@ function reparseCurrentBuffer() {
 function parseAnimationData(buffer) {
     const view = new DataView(buffer);
     let offset = parseInt(document.getElementById('offset-input').value) || 0;
-    // Use the user's input scale factor, now defaulted to 15000.0
-    const scaleFactor = parseFloat(document.getElementById('scale-factor-input').value) || 15000.0;
+    // Use the user's input scale factor, now defaulted to 3.2767
+    const scaleFactor = parseFloat(document.getElementById('scale-factor-input').value) || 3.2767;
     
     const metadata = { header: 0n, garbageSize: 0, garbageData: null, boneCount: 0, boneIds: [], remainingData: null, headerOffset: offset };
 
@@ -859,7 +861,7 @@ function exportBytes() {
 }
 
 function reconstructBinary() {
-    const SCALE_FACTOR = parseFloat(document.getElementById('scale-factor-input').value) || 15000.0;
+    const SCALE_FACTOR = parseFloat(document.getElementById('scale-factor-input').value) || 3.2767;
     const EXPORT_MULTIPLIER = parseFloat(document.getElementById('export-multiplier-input').value) || 1.0;
     
     const headerSize = 8;
