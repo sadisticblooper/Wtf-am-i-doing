@@ -3,11 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Animation Editor V4 (Scaled Transform Controls)</title>
+    <title>Animation Editor V4 (Hierarchy Fix Revert)</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/TransformControls.js"></script>
     <style>
+        /* ... (Style sheet remains the same) ... */
         body { margin: 0; overflow: hidden; background-color: #121212; font-family: 'Inter', 'Segoe UI', sans-serif; color: white; }
         #app-container { display: flex; height: 100vh; width: 100vw; overflow: hidden; position: relative; }
         #sidebar { width: 360px; min-width: 360px; background: #1e1e1e; border-right: 1px solid #333; display: flex; flex-direction: column; padding: 10px; z-index: 20; transition: margin-left 0.3s ease, min-width 0.3s ease; height: 100%; overflow-y: auto; margin-left: 0; position: relative; }
@@ -18,7 +19,7 @@
         #canvas-wrapper { flex-grow: 1; position: relative; background: radial-gradient(circle at center, #1a1a1a 0%, #000000 100%); overflow: hidden; }
         #canvas-container { width: 100%; height: 100%; display: block; }
         #timeline-wrapper { height: 140px; min-height: 140px; background: #181818; border-top: 1px solid #333; display: flex; flex-direction: column; user-select: none; }
-        #timeline-controls { height: 36px; min-height: 36px; background: #252525; display: flex; align-items: center; justify-content: center; gap: 15px; border-bottom: 1px solid #333; position: relative; }
+        #timeline-controls { height: 36px; background: #252525; display: flex; align-items: center; justify-content: center; padding: 0 10px; gap: 15px; border-bottom: 1px solid #333; position: relative; }
         #time-display { position: absolute; right: 15px; font-family: monospace; font-size: 12px; color: #81d4fa; min-width: 120px; text-align: right; }
         .tc-btn { background: none; border: none; color: #ccc; cursor: pointer; font-size: 16px; padding: 4px 8px; border-radius: 4px; }
         .tc-btn:hover { background: #333; color: white; }
@@ -45,7 +46,6 @@
         .log-err { color: #ff5252; }
         .log-suc { color: #69f0ae; }
         .log-warn { color: #ffd740; }
-        .transform-scale-info { background: #1a237e; padding: 8px; border-radius: 4px; margin-top: 5px; font-size: 11px; text-align: center; }
     </style>
 </head>
 <body>
@@ -67,7 +67,6 @@
             <button id="edit-mode-btn" class="action-btn">✎ Enter Edit Mode</button>
             <div style="display: flex; gap: 5px;">
                 <button id="undo-btn" class="action-btn" disabled style="flex:1;">⎌ Undo (0)</button>
-                <button onclick="resetCurrentFrame()" class="action-btn" style="flex:1;">🔄 Reset Frame</button>
             </div>
             
             <div id="save-tools" style="display:none; margin-top:5px; padding-top:5px; border-top:1px dashed #444;">
@@ -80,16 +79,7 @@
         </div>
 
         <div class="panel">
-            <h3>3. Transform Settings</h3>
-            <div class="control-group">
-                <label>Move Scale Factor:</label>
-                <input type="number" id="move-scale-input" value="100.0" step="10.0" min="1.0" max="1000.0">
-            </div>
-            <div class="transform-scale-info">
-                ⚡ <strong>Transform Scale: 100x</strong><br>
-                <small>1 unit movement = 100 units in animation</small>
-            </div>
-            
+            <h3>3. Settings</h3>
             <div class="control-group">
                 <label>Pos Scale (Read):</label>
                 <input type="number" id="scale-factor-input" value="100000.0" step="1.0">
@@ -105,33 +95,6 @@
             <button onclick="reparseCurrentBuffer()" class="action-btn" style="background:#444;">↻ Reload Data</button>
         </div>
 
-        <div class="panel">
-            <h3>4. Quick Movements</h3>
-            <div style="display: flex; gap: 5px; margin-bottom: 5px;">
-                <button onclick="applyQuickMove(10, 0, 0)" class="action-btn" style="flex:1;">X+10</button>
-                <button onclick="applyQuickMove(-10, 0, 0)" class="action-btn" style="flex:1;">X-10</button>
-            </div>
-            <div style="display: flex; gap: 5px; margin-bottom: 5px;">
-                <button onclick="applyQuickMove(0, 10, 0)" class="action-btn" style="flex:1;">Y+10</button>
-                <button onclick="applyQuickMove(0, -10, 0)" class="action-btn" style="flex:1;">Y-10</button>
-            </div>
-            <div style="display: flex; gap: 5px;">
-                <button onclick="applyQuickMove(0, 0, 10)" class="action-btn" style="flex:1;">Z+10</button>
-                <button onclick="applyQuickMove(0, 0, -10)" class="action-btn" style="flex:1;">Z-10</button>
-            </div>
-            <div style="font-size: 11px; color: #666; margin-top: 5px; text-align: center;">
-                <em>Applies to selected bone</em>
-            </div>
-        </div>
-
-        <div class="panel">
-            <h3>5. Custom Animation / Batch Edit</h3>
-            <textarea id="custom-anim-input" style="width: 100%; height: 100px; background: #111; border: 1px solid #444; color: white; padding: 5px; border-radius: 3px; font-family: monospace; font-size: 11px;" placeholder="frame,bone_name,X_offset,Y_offset,Z_offset&#10;1,pelvis,10.0,0.0,0.0&#10;5,head,-5.0,2.0,0.0"></textarea>
-            <button id="apply-custom-anim-btn" class="action-btn primary" style="margin-top: 5px;">⚡ Apply Batch Changes</button>
-            <div style="font-size: 11px; color: #666; margin-top: 5px; text-align: center;">
-                <em>Offsets are in raw animation units (game scale). 1-based frames.</em>
-            </div>
-        </div>
         <div class="panel" style="display:flex; flex-direction:column; flex-grow:1; margin-bottom:0;">
             <h3>System Log</h3>
             <div id="log-output"></div>
@@ -248,8 +211,7 @@ let skeletonData = [];
 let undoStack = [];
 let loadedFileName = "animation.bytes";
 const MAX_UNDO = 5;
-let T_POSE_CENTER_OFFSET = new THREE.Vector3(0, 0, 0);
-let moveScaleFactor = 100.0; // How much to scale transform movements
+let T_POSE_CENTER_OFFSET = new THREE.Vector3(0, 0, 0); // To be calculated
 
 // Timeline Vars
 let tlCanvas, tlCtx;
@@ -269,12 +231,14 @@ function log(msg, type="info") {
     d.scrollTop = d.scrollHeight;
 }
 
+// Function to read Float16 data from file and convert to 3D Viewer float
 function readFloat16(view, offset, littleEndian, scale) {
     if(offset + 2 > view.byteLength) return 0;
     const shortValue = view.getInt16(offset, littleEndian);
     return shortValue / scale;
 }
 
+// Function to convert 3D Viewer float to raw Int16 data for EXPORT
 function float32ToRawInt16(value, scaleFactor, exportMultiplier) {
     const multipliedValue = value * exportMultiplier;
     
@@ -285,6 +249,7 @@ function float32ToRawInt16(value, scaleFactor, exportMultiplier) {
     
     return intVal;
 }
+
 
 let rawBuffer = null;
 
@@ -297,14 +262,17 @@ function reparseCurrentBuffer() {
         
         currentFrame = 0;
         
+        // REBUILD SKELETON: REVERTED TO FLAT STRUCTURE TO AVOID HIERARCHY MISMATCH
         skeletonData = parseSkeletonText(DEFAULT_SKELETON_TXT); 
         buildSkeletonVisuals();
         
         updateSkeletonPose(0);
         
+        // Reset Undo
         undoStack = [];
         updateUndoBtn();
         
+        // Redraw timeline
         drawTimeline();
 
         log(`Parse Successful! Loaded ${result.frames.length} frames.`, "suc");
@@ -358,6 +326,7 @@ function parseAnimationData(buffer) {
             
             const vec = new THREE.Vector3(posX, posY, posZ);
             vec.userData = { rotBytes: new Uint8Array(rotBytes) };
+            // Animation offsets are stored in frameData by boneId
             frameData[boneId] = vec;
             readPtr += 12;
         }
@@ -368,7 +337,7 @@ function parseAnimationData(buffer) {
 }
 
 // ==========================================
-// 3. SCALED TRANSFORM SYSTEM
+// 3. 3D VIEWER (Flat Structure Reversion)
 // ==========================================
 function initViewer() {
     const container = document.getElementById('canvas-container');
@@ -376,10 +345,10 @@ function initViewer() {
     const height = container.clientHeight;
 
     scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x111111);
+    scene.background = new THREE.Color(0x111111); 
 
     camera = new THREE.PerspectiveCamera(60, width / height, 0.1, 1000);
-    camera.position.set(0, 100, 400);
+    camera.position.set(0, 100, 400); 
 
     renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setSize(width, height);
@@ -391,28 +360,17 @@ function initViewer() {
     controls.enableDamping = true;
     
     transformControl = new THREE.TransformControls(camera, renderer.domElement);
-    
-    // SCALED TRANSFORM EVENT HANDLERS
-    transformControl.addEventListener('objectChange', () => {
-        if (transformControl.object && !transformControl.dragging) {
-            updateBoneFromTransform(transformControl.object);
-        }
-    });
-
     transformControl.addEventListener('dragging-changed', (event) => {
-        controls.enabled = !event.value;
-        
-        if (!event.value && transformControl.object) {
-            recordUndo();
-            updateBoneFromTransform(transformControl.object);
-            updateSkeletonPose(currentFrame);
-        }
+        controls.enabled = !event.value; 
+        if(!event.value) recordUndo();
     });
-    
+    transformControl.addEventListener('change', () => {
+        if(transformControl.object) updateBoneFromTransform(transformControl.object);
+    });
     scene.add(transformControl);
 
     scene.add(new THREE.GridHelper(500, 50, 0x444444, 0x222222));
-    scene.add(new THREE.AxesHelper(50));
+    scene.add(new THREE.AxesHelper(50)); 
     const light = new THREE.DirectionalLight(0xffffff, 1);
     light.position.set(50, 200, 100);
     scene.add(light);
@@ -420,12 +378,15 @@ function initViewer() {
 
     window.addEventListener('resize', onWindowResize, false);
     
+    // Skeleton Init
     skeletonData = parseSkeletonText(DEFAULT_SKELETON_TXT);
     buildSkeletonVisuals();
     
+    // Setup UI & Timeline
     setupUI();
     initTimeline();
     
+    // Start Loop
     requestAnimationFrame(animate);
 }
 
@@ -434,7 +395,7 @@ function onWindowResize() {
     const w = wrapper.clientWidth;
     const h = wrapper.clientHeight;
     
-    camera.aspect = w / h;
+    camera.aspect = w / h; 
     camera.updateProjectionMatrix();
     
     renderer.setSize(w, h);
@@ -442,6 +403,7 @@ function onWindowResize() {
     resizeTimeline();
 }
 
+// Raycasting for Edit Mode
 const raycaster = new THREE.Raycaster();
 const mouse = new THREE.Vector2();
 
@@ -452,7 +414,7 @@ document.getElementById('canvas-container').addEventListener('pointerdown', (eve
     mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
     
     raycaster.setFromCamera(mouse, camera);
-    const intersects = raycaster.intersectObjects(boneMeshes);
+    const intersects = raycaster.intersectObjects(boneMeshes); 
 
     if (intersects.length > 0) {
         const boneObject = intersects[0].object.userData.boneObject;
@@ -462,52 +424,24 @@ document.getElementById('canvas-container').addEventListener('pointerdown', (eve
     }
 });
 
-function selectNode(boneObj) {
+function selectNode(boneObject) {
     boneMeshes.forEach(n => n.material.color.setHex(0x00ff00));
-    const meshToHighlight = boneMeshes.find(m => m.userData.boneId === boneObj.userData.boneId);
-    if(meshToHighlight) meshToHighlight.material.color.setHex(0x0088ff);
+    const meshToHighlight = boneMeshes.find(m => m.userData.boneId === boneObject.userData.boneId);
+    if(meshToHighlight) meshToHighlight.material.color.setHex(0x0088ff); 
     
-    transformControl.attach(boneObj);
-    log(`Selected: ${boneObj.name} (ID: ${boneObj.userData.boneId})`, "info");
+    transformControl.attach(boneObject);
 }
-
 function deselectNode() {
     transformControl.detach();
     boneMeshes.forEach(n => n.material.color.setHex(0x00ff00));
 }
 
-// KEY FUNCTION: Apply scaled movement to animation data
-function updateBoneFromTransform(boneObj) {
-    if(!animationFrames[currentFrame]) return;
-    const id = boneObj.userData.boneId;
-    
-    // Get the current visual position (scaled for user interaction)
-    const currentVisualPos = boneObj.position.clone();
-    
-    // Calculate the animation offset (scaled up for game precision)
-    const initialLocalPos = boneObj.userData.initialLocalPos.clone();
-    const visualOffset = currentVisualPos.sub(initialLocalPos);
-    
-    // Scale the offset for the actual animation data
-    const animationOffset = visualOffset.multiplyScalar(moveScaleFactor);
-    
-    console.log(`Transform Update - ${boneObj.name}:`);
-    console.log(`  Visual movement: ${visualOffset.toArray().map(v => v.toFixed(3))}`);
-    console.log(`  Scaled to animation: ${animationOffset.toArray().map(v => v.toFixed(6))}`);
-    
-    // Store in animation data
-    const existing = animationFrames[currentFrame][id];
-    if(existing && existing.userData.rotBytes) {
-        animationOffset.userData = { rotBytes: existing.userData.rotBytes };
-    }
 
-    animationFrames[currentFrame][id] = animationOffset;
-}
-
+// **REVISED HIERARCHY PARSING (FLAT STRUCTURE + T-POSE CENTER CALCULATION)**
 function parseSkeletonText(txt) {
     const lines = txt.split('\n');
     const skel = [];
-    const globalPositions = [];
+    const globalPositions = []; 
     let minX = Infinity, minY = Infinity, minZ = Infinity;
     let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
 
@@ -521,6 +455,7 @@ function parseSkeletonText(txt) {
             const globalPos = new THREE.Vector3(parseFloat(posMatch[1]), parseFloat(posMatch[2]), parseFloat(posMatch[3]));
             const boneId = Object.entries(BONE_MAP).find(([id, val]) => val === name)?.[0];
             
+            // Bounding Box Calculation
             minX = Math.min(minX, globalPos.x); maxX = Math.max(maxX, globalPos.x);
             minY = Math.min(minY, globalPos.y); maxY = Math.max(maxY, globalPos.y);
             minZ = Math.min(minZ, globalPos.z); maxZ = Math.max(maxZ, globalPos.z);
@@ -528,7 +463,7 @@ function parseSkeletonText(txt) {
             const node = {
                 name: name,
                 boneId: boneId ? parseInt(boneId) : -1,
-                parentIndex: -1,
+                parentIndex: -1, // Flat structure: No hierarchy during parsing
                 initialGlobalPos: globalPos.clone()
             };
             
@@ -537,17 +472,20 @@ function parseSkeletonText(txt) {
         }
     });
 
+    // Calculate T-Pose Center (midpoint of the bounding box)
     T_POSE_CENTER_OFFSET = new THREE.Vector3(
         (minX + maxX) / 2, 
         (minY + maxY) / 2, 
         (minZ + maxZ) / 2
     );
-    log(`T-Pose Center: (${T_POSE_CENTER_OFFSET.x.toFixed(2)}, ${T_POSE_CENTER_OFFSET.y.toFixed(2)}, ${T_POSE_CENTER_OFFSET.z.toFixed(2)})`, "info");
+    log(`T-Pose Center Calculated: (${T_POSE_CENTER_OFFSET.x.toFixed(2)}, ${T_POSE_CENTER_OFFSET.y.toFixed(2)}, ${T_POSE_CENTER_OFFSET.z.toFixed(2)})`, "info");
     
+    // Re-calculate InitialLocalPos (T-Pose position relative to the calculated center)
     skel.forEach(bone => {
         bone.initialLocalPos = bone.initialGlobalPos.clone().sub(T_POSE_CENTER_OFFSET);
     });
     
+    // Re-establish hierarchy based on the text file's structure *for lines only*
     let tempStack = [];
     lines.forEach(line => {
         if(!line.trim()) return;
@@ -571,50 +509,75 @@ function parseSkeletonText(txt) {
     return skel;
 }
 
+// **REVISED VISUALS BUILDING (FLAT STRUCTURE)**
 function buildSkeletonVisuals() {
     boneObjects.forEach(obj => { if (obj.parent) obj.parent.remove(obj); });
     boneMeshes.forEach(mesh => scene.remove(mesh));
     skeletonLines.forEach(line => scene.remove(line));
 
-    boneMeshes = [];
+    boneMeshes = []; 
     boneObjects = [];
     skeletonLines = [];
     
     const geo = new THREE.SphereGeometry(2.0, 8, 8);
-    const mat = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
-    const lineMat = new THREE.LineBasicMaterial({ color: 0xcccccc, transparent: true, opacity: 0.8 });
+    const mat = new THREE.MeshBasicMaterial({ color: 0x00ff00 }); 
+    const lineMat = new THREE.LineBasicMaterial({ color: 0xcccccc, transparent: true, opacity: 0.8 }); 
 
     const root = new THREE.Object3D();
     root.name = "SkeletonRoot";
+    // Set the root to the T-Pose Center. All subsequent bone positions are relative to this.
     root.position.copy(T_POSE_CENTER_OFFSET);
     scene.add(root);
 
     skeletonData.forEach((bone, i) => {
+        // 1. Create the Hierarchy Object (Object3D) - flat for now, positioned by T-Pose local pos
         const boneObj = new THREE.Object3D();
         boneObj.name = bone.name;
-        boneObj.position.copy(bone.initialLocalPos);
-        boneObj.userData = { ...bone };
+        boneObj.position.copy(bone.initialLocalPos); 
+        boneObj.userData = { ...bone }; 
         boneObjects.push(boneObj);
 
+        // 2. Establish Parenting - simplified to flat structure for translation, but attached to root
         root.add(boneObj);
         
-        const mesh = new THREE.Mesh(geo, mat.clone());
+        // 3. Create the Visualization Mesh (Sphere)
+        const mesh = new THREE.Mesh(geo, mat.clone()); 
         mesh.userData.boneId = bone.boneId;
-        mesh.userData.boneObject = boneObj;
-        boneObj.add(mesh);
+        mesh.userData.boneObject = boneObj; 
+        boneObj.add(mesh); 
         boneMeshes.push(mesh);
         
+        // 4. Create Visualization Lines (Using the parsed hierarchy for visualization only)
         if(bone.parentIndex !== -1) {
             const parentObj = boneObjects[bone.parentIndex];
             const lineGeo = new THREE.BufferGeometry().setFromPoints([parentObj.position, boneObj.position]);
             const line = new THREE.Line(lineGeo, lineMat);
             line.userData = { parentObj: parentObj, childObj: boneObj };
-            root.add(line);
+            root.add(line); // Add lines to the root, which is centered
             skeletonLines.push(line);
         }
     });
 }
 
+function updateBoneFromTransform(boneObj) {
+    if(!animationFrames[currentFrame]) return;
+    const id = boneObj.userData.boneId;
+    
+    // Calculate the new local position relative to the T-Pose center (root)
+    const newPosRelativeToCenter = boneObj.position.clone();
+    
+    // The animation offset should be the difference between the current frame's position and the T-Pose local position.
+    const initialLocalPos = boneObj.userData.initialLocalPos.clone();
+    const newAnimOffset = newPosRelativeToCenter.sub(initialLocalPos);
+    
+    const existing = animationFrames[currentFrame][id];
+    if(existing && existing.userData.rotBytes) newAnimOffset.userData = { rotBytes: existing.userData.rotBytes };
+
+    animationFrames[currentFrame][id] = newAnimOffset;
+}
+
+
+// **REVISED UPDATE POSE (FLAT STRUCTURE)**
 function updateSkeletonPose(frameIdx) {
     if(!animationFrames[frameIdx]) return;
     const frameData = animationFrames[frameIdx];
@@ -625,14 +588,15 @@ function updateSkeletonPose(frameIdx) {
         
         if(transformControl.object === boneObj && transformControl.dragging) return;
         
-        let finalLocalPos = initialLocalPos.clone();
+        let finalLocalPos = initialLocalPos;
         
         if(frameData[id]) {
-            // Scale down the animation data for visual display
-            const visualOffset = frameData[id].clone().divideScalar(moveScaleFactor);
-            finalLocalPos.add(visualOffset);
+            // Apply the animation offset (local translation)
+            // Animation is defined as the offset from the T-Pose center
+            finalLocalPos.add(frameData[id]);
         }
         
+        // Set the Object3D's local position (relative to the T_POSE_CENTER_OFFSET root)
         boneObj.position.copy(finalLocalPos);
     });
     
@@ -641,16 +605,20 @@ function updateSkeletonPose(frameIdx) {
 }
 
 function updateLines() {
+    // Lines are children of the root and follow boneObj positions which are relative to the root.
+    // No need for complex world matrix transforms, just update vertices based on boneObj.position.
     skeletonLines.forEach(line => {
         const pObj = line.userData.parentObj;
         const cObj = line.userData.childObj;
         
         const pos = line.geometry.attributes.position.array;
         
+        // Parent bone position
         pos[0]=pObj.position.x; 
         pos[1]=pObj.position.y; 
         pos[2]=pObj.position.z;
         
+        // Child bone position
         pos[3]=cObj.position.x; 
         pos[4]=cObj.position.y; 
         pos[5]=cObj.position.z;
@@ -659,142 +627,27 @@ function updateLines() {
     });
 }
 
+
 function animate(time) {
     requestAnimationFrame(animate);
-    controls.update();
+    controls.update(); 
     if(isPlaying && animationFrames.length > 0) {
-        if(time - lastTime > (1000/30)) {
+        if(time - lastTime > (1000/30)) { 
             currentFrame = (currentFrame + 1) % animationFrames.length;
             updateUIForFrame(currentFrame);
             lastTime = time;
+        }
+    } else {
+        if(isEditMode) {
+             scene.updateMatrixWorld(true);
+             updateLines();
         }
     }
     renderer.render(scene, camera);
 }
 
 // ==========================================
-// 4. QUICK MOVEMENT FUNCTIONS
-// ==========================================
-function applyQuickMove(x, y, z) {
-    if (!transformControl.object) {
-        log("No bone selected", "err");
-        return;
-    }
-    
-    const move = new THREE.Vector3(x, y, z);
-    transformControl.object.position.add(move);
-    
-    updateBoneFromTransform(transformControl.object);
-    updateSkeletonPose(currentFrame);
-    
-    log(`Quick move applied: (${x}, ${y}, ${z})`, "info");
-}
-
-function resetCurrentFrame() {
-    if(!animationFrames[currentFrame]) return;
-    
-    // Reset all bones in current frame to zero offset
-    Object.keys(animationFrames[currentFrame]).forEach(boneId => {
-        const vec = animationFrames[currentFrame][boneId];
-        if(vec && vec.userData.rotBytes) {
-            animationFrames[currentFrame][boneId] = new THREE.Vector3(0, 0, 0);
-            animationFrames[currentFrame][boneId].userData = { rotBytes: vec.userData.rotBytes };
-        }
-    });
-    
-    updateSkeletonPose(currentFrame);
-    log(`Frame ${currentFrame} reset to T-pose`, "info");
-}
-
-// ==========================================
-// 5. CUSTOM ANIMATION / BATCH EDIT LOGIC (NEW FEATURE)
-// ==========================================
-
-function getBoneIdFromName(boneName) {
-    const boneIdEntry = Object.entries(BONE_MAP).find(([id, name]) => name === boneName);
-    return boneIdEntry ? parseInt(boneIdEntry[0]) : null;
-}
-
-function applyCustomAnimation() {
-    if (animationFrames.length === 0) {
-        log("No animation data loaded.", "err");
-        return;
-    }
-    
-    const input = document.getElementById('custom-anim-input').value.trim();
-    if (!input) {
-        log("No batch data entered.", "err");
-        return;
-    }
-
-    // Record undo state before applying batch changes (one undo for the whole batch)
-    recordUndo(); 
-
-    const lines = input.split('\n');
-    let successfulChanges = 0;
-    const totalFrames = animationFrames.length;
-
-    lines.forEach((line, index) => {
-        // Skip header/empty lines. We check for a common header row.
-        if (index === 0 && line.toLowerCase().includes('frame,bone')) return;
-        if (!line.trim()) return;
-
-        const parts = line.split(',').map(p => p.trim());
-        if (parts.length !== 5) {
-            log(`Skipping line ${index + 1}: Malformed line (expected 5 columns).`, "warn");
-            return;
-        }
-
-        const [frameStr, boneName, xOffsetStr, yOffsetStr, zOffsetStr] = parts;
-        
-        const frame = parseInt(frameStr) - 1; // 1-based frame in UI, 0-based in array
-        const boneId = getBoneIdFromName(boneName);
-        const xOffset = parseFloat(xOffsetStr);
-        const yOffset = parseFloat(yOffsetStr);
-        const zOffset = parseFloat(zOffsetStr);
-
-        if (isNaN(frame) || frame < 0 || frame >= totalFrames) {
-            log(`Skipping line ${index + 1}: Invalid Frame Number (${frameStr}). Must be between 1 and ${totalFrames}.`, "warn");
-            return;
-        }
-        if (boneId === null) {
-            log(`Skipping line ${index + 1}: Unknown Bone Name (${boneName}).`, "warn");
-            return;
-        }
-        if (isNaN(xOffset) || isNaN(yOffset) || isNaN(zOffset)) {
-            log(`Skipping line ${index + 1}: Invalid Offset Value.`, "warn");
-            return;
-        }
-
-        const frameData = animationFrames[frame];
-        
-        if (frameData && frameData[boneId]) {
-            // Core logic: Directly add the offset to the existing position vector (in game units)
-            frameData[boneId].x += xOffset;
-            frameData[boneId].y += yOffset;
-            frameData[boneId].z += zOffset;
-            successfulChanges++;
-        } else {
-            // This happens if the bone is not one of the boneIds parsed from the file
-            log(`Skipping line ${index + 1}: Bone '${boneName}' (ID: ${boneId}) not found in animation data structure.`, "warn");
-        }
-    });
-
-    if (successfulChanges > 0) {
-        log(`Successfully applied ${successfulChanges} batch modifications.`, "suc");
-        // Update the visual representation of the current frame if it was modified
-        updateSkeletonPose(currentFrame);
-    } else {
-        log("No changes were applied. Check input format and frame/bone validity.", "err");
-        // Remove the empty undo state if no changes were made
-        undoStack.pop();
-        updateUndoBtn();
-    }
-}
-
-
-// ==========================================
-// 6. TIMELINE LOGIC
+// 4. TIMELINE LOGIC (CANVAS) - No Change
 // ==========================================
 function initTimeline() {
     tlCanvas = document.getElementById('timeline-canvas');
@@ -861,7 +714,7 @@ function drawTimeline() {
         }
 
         if (isEditMode) {
-            tlCtx.fillStyle = '#2e7d32';
+            tlCtx.fillStyle = '#2e7d32'; 
             tlCtx.fillRect(x + 1, 30, tlScale - 2, 40);
         } else {
             tlCtx.fillStyle = '#37474f';
@@ -928,7 +781,7 @@ function updateUIForFrame(f) {
 }
 
 // ==========================================
-// 7. APP LOGIC
+// 5. APP LOGIC - No Change
 // ==========================================
 function toggleEditMode() {
     isEditMode = !isEditMode;
@@ -948,19 +801,10 @@ function toggleEditMode() {
         deselectNode();
         log("Edit Mode Disabled.", "info");
     }
-    drawTimeline();
+    drawTimeline(); 
 }
 
 function recordUndo() {
-    // Check if an entry already exists for the current frame to prevent stacking identical states
-    if (undoStack.length > 0) {
-        const lastAction = undoStack[undoStack.length - 1];
-        if (lastAction.frameIndex === currentFrame) {
-            // Optional: You could check for deep equality here, but for simplicity, 
-            // we'll allow multiple undo steps on the same frame index if they come from different actions (e.g., drag, quick move).
-        }
-    }
-    
     const frameSnapshot = {};
     const frameData = animationFrames[currentFrame];
     for(let key in frameData) {
@@ -968,49 +812,19 @@ function recordUndo() {
         vec.userData = { ...frameData[key].userData };
         frameSnapshot[key] = vec;
     }
-    
-    // For batch operations, we take a snapshot of ALL frames to allow resetting the entire animation array.
-    // However, given the initial undo stack only stores *per-frame* changes, 
-    // let's adjust the snapshot to handle the batch edit spanning multiple frames.
-    
-    // For the custom animation batch feature, we'll make a full copy of the entire animationFrames array, as it modifies multiple frames.
-    // Note: This is memory intensive but safest for batch operations.
-    
-    const fullSnapshot = animationFrames.map(frame => {
-        const snapshot = {};
-        for(let key in frame) {
-            const vec = frame[key].clone();
-            vec.userData = { ...frame[key].userData };
-            snapshot[key] = vec;
-        }
-        return snapshot;
-    });
-    
-    // Instead of pushing the frameIndex, we push null to indicate a full snapshot was taken
-    undoStack.push({ frameIndex: null, data: fullSnapshot }); 
-
-    if(undoStack.length > MAX_UNDO) undoStack.shift();
+    undoStack.push({ frameIndex: currentFrame, data: frameSnapshot });
+    if(undoStack.length > MAX_UNDO) undoStack.shift(); 
     updateUndoBtn();
 }
 
 function performUndo() {
     if(undoStack.length === 0) return;
     const action = undoStack.pop();
-    
-    // If action.frameIndex is null, it's a full snapshot (from batch edit or similar)
-    if (action.frameIndex === null) {
-        animationFrames = action.data; // Restore entire animation array
-        log("Full animation state restored via Undo.", "info");
-    } else {
-        // Original per-frame undo logic (might be removed or adjusted depending on feature set)
-        animationFrames[action.frameIndex] = action.data;
-    }
-    
-    if(currentFrame === (action.frameIndex ?? currentFrame)) {
+    animationFrames[action.frameIndex] = action.data;
+    if(currentFrame === action.frameIndex) {
         updateSkeletonPose(currentFrame);
-        if(transformControl.object) transformControl.attach(transformControl.object);
+        if(transformControl.object) transformControl.attach(transformControl.object); 
     }
-    
     updateUndoBtn();
     log("Undo performed.", "info");
 }
@@ -1077,9 +891,9 @@ function reconstructBinary() {
 
     animationFrames.forEach(frame => {
         fileMetadata.boneIds.forEach(id => {
-            const vec = frame[id];
-            const x = vec ? vec.x : 0;
-            const y = vec ? vec.y : 0;
+            const vec = frame[id]; 
+            const x = vec ? vec.x : 0; 
+            const y = vec ? vec.y : 0; 
             const z = vec ? vec.z : 0;
             
             view.setInt16(ptr, float32ToRawInt16(x, SCALE_FACTOR, EXPORT_MULTIPLIER), true);
@@ -1130,7 +944,7 @@ function setupUI() {
         const btn = document.getElementById('sidebar-toggle');
         btn.innerText = sidebar.classList.contains('collapsed') ? "▶" : "◀";
         
-        setTimeout(onWindowResize, 350);
+        setTimeout(onWindowResize, 350); 
     });
 
     document.getElementById('edit-mode-btn').addEventListener('click', toggleEditMode);
@@ -1140,24 +954,6 @@ function setupUI() {
     
     document.getElementById('scale-factor-input').addEventListener('change', reparseCurrentBuffer);
     document.getElementById('offset-input').addEventListener('change', reparseCurrentBuffer);
-    
-    // Move scale factor update
-    document.getElementById('move-scale-input').addEventListener('change', (e) => {
-        moveScaleFactor = parseFloat(e.target.value);
-        updateTransformScaleInfo();
-        log(`Move scale factor set to: ${moveScaleFactor}x`, "info");
-    });
-    
-    // NEW FEATURE: Wire up the custom animation button
-    document.getElementById('apply-custom-anim-btn').addEventListener('click', applyCustomAnimation);
-    
-    updateTransformScaleInfo();
-}
-
-function updateTransformScaleInfo() {
-    const infoElement = document.querySelector('.transform-scale-info');
-    infoElement.innerHTML = `⚡ <strong>Transform Scale: ${moveScaleFactor}x</strong><br>
-    <small>1 unit movement = ${moveScaleFactor} units in animation</small>`;
 }
 
 document.addEventListener('DOMContentLoaded', initViewer);
