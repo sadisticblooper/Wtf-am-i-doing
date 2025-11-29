@@ -18,7 +18,7 @@
         #canvas-wrapper { flex-grow: 1; position: relative; background: radial-gradient(circle at center, #1a1a1a 0%, #000000 100%); overflow: hidden; }
         #canvas-container { width: 100%; height: 100%; display: block; }
         #timeline-wrapper { height: 140px; min-height: 140px; background: #181818; border-top: 1px solid #333; display: flex; flex-direction: column; user-select: none; }
-        #timeline-controls { height: 36px; background: #252525; display: flex; align-items: center; justify-content: center; gap: 15px; border-bottom: 1px solid #333; position: relative; }
+        #timeline-controls { height: 36px; min-height: 36px; background: #252525; display: flex; align-items: center; justify-content: center; gap: 15px; border-bottom: 1px solid #333; position: relative; }
         #time-display { position: absolute; right: 15px; font-family: monospace; font-size: 12px; color: #81d4fa; min-width: 120px; text-align: right; }
         .tc-btn { background: none; border: none; color: #ccc; cursor: pointer; font-size: 16px; padding: 4px 8px; border-radius: 4px; }
         .tc-btn:hover { background: #333; color: white; }
@@ -124,6 +124,14 @@
             </div>
         </div>
 
+        <div class="panel">
+            <h3>5. Custom Animation / Batch Edit</h3>
+            <textarea id="custom-anim-input" style="width: 100%; height: 100px; background: #111; border: 1px solid #444; color: white; padding: 5px; border-radius: 3px; font-family: monospace; font-size: 11px;" placeholder="frame,bone_name,X_offset,Y_offset,Z_offset&#10;1,pelvis,10.0,0.0,0.0&#10;5,head,-5.0,2.0,0.0"></textarea>
+            <button id="apply-custom-anim-btn" class="action-btn primary" style="margin-top: 5px;">⚡ Apply Batch Changes</button>
+            <div style="font-size: 11px; color: #666; margin-top: 5px; text-align: center;">
+                <em>Offsets are in raw animation units (game scale). 1-based frames.</em>
+            </div>
+        </div>
         <div class="panel" style="display:flex; flex-direction:column; flex-grow:1; margin-bottom:0;">
             <h3>System Log</h3>
             <div id="log-output"></div>
@@ -699,7 +707,94 @@ function resetCurrentFrame() {
 }
 
 // ==========================================
-// 5. TIMELINE LOGIC
+// 5. CUSTOM ANIMATION / BATCH EDIT LOGIC (NEW FEATURE)
+// ==========================================
+
+function getBoneIdFromName(boneName) {
+    const boneIdEntry = Object.entries(BONE_MAP).find(([id, name]) => name === boneName);
+    return boneIdEntry ? parseInt(boneIdEntry[0]) : null;
+}
+
+function applyCustomAnimation() {
+    if (animationFrames.length === 0) {
+        log("No animation data loaded.", "err");
+        return;
+    }
+    
+    const input = document.getElementById('custom-anim-input').value.trim();
+    if (!input) {
+        log("No batch data entered.", "err");
+        return;
+    }
+
+    // Record undo state before applying batch changes (one undo for the whole batch)
+    recordUndo(); 
+
+    const lines = input.split('\n');
+    let successfulChanges = 0;
+    const totalFrames = animationFrames.length;
+
+    lines.forEach((line, index) => {
+        // Skip header/empty lines. We check for a common header row.
+        if (index === 0 && line.toLowerCase().includes('frame,bone')) return;
+        if (!line.trim()) return;
+
+        const parts = line.split(',').map(p => p.trim());
+        if (parts.length !== 5) {
+            log(`Skipping line ${index + 1}: Malformed line (expected 5 columns).`, "warn");
+            return;
+        }
+
+        const [frameStr, boneName, xOffsetStr, yOffsetStr, zOffsetStr] = parts;
+        
+        const frame = parseInt(frameStr) - 1; // 1-based frame in UI, 0-based in array
+        const boneId = getBoneIdFromName(boneName);
+        const xOffset = parseFloat(xOffsetStr);
+        const yOffset = parseFloat(yOffsetStr);
+        const zOffset = parseFloat(zOffsetStr);
+
+        if (isNaN(frame) || frame < 0 || frame >= totalFrames) {
+            log(`Skipping line ${index + 1}: Invalid Frame Number (${frameStr}). Must be between 1 and ${totalFrames}.`, "warn");
+            return;
+        }
+        if (boneId === null) {
+            log(`Skipping line ${index + 1}: Unknown Bone Name (${boneName}).`, "warn");
+            return;
+        }
+        if (isNaN(xOffset) || isNaN(yOffset) || isNaN(zOffset)) {
+            log(`Skipping line ${index + 1}: Invalid Offset Value.`, "warn");
+            return;
+        }
+
+        const frameData = animationFrames[frame];
+        
+        if (frameData && frameData[boneId]) {
+            // Core logic: Directly add the offset to the existing position vector (in game units)
+            frameData[boneId].x += xOffset;
+            frameData[boneId].y += yOffset;
+            frameData[boneId].z += zOffset;
+            successfulChanges++;
+        } else {
+            // This happens if the bone is not one of the boneIds parsed from the file
+            log(`Skipping line ${index + 1}: Bone '${boneName}' (ID: ${boneId}) not found in animation data structure.`, "warn");
+        }
+    });
+
+    if (successfulChanges > 0) {
+        log(`Successfully applied ${successfulChanges} batch modifications.`, "suc");
+        // Update the visual representation of the current frame if it was modified
+        updateSkeletonPose(currentFrame);
+    } else {
+        log("No changes were applied. Check input format and frame/bone validity.", "err");
+        // Remove the empty undo state if no changes were made
+        undoStack.pop();
+        updateUndoBtn();
+    }
+}
+
+
+// ==========================================
+// 6. TIMELINE LOGIC
 // ==========================================
 function initTimeline() {
     tlCanvas = document.getElementById('timeline-canvas');
@@ -833,7 +928,7 @@ function updateUIForFrame(f) {
 }
 
 // ==========================================
-// 6. APP LOGIC
+// 7. APP LOGIC
 // ==========================================
 function toggleEditMode() {
     isEditMode = !isEditMode;
@@ -857,6 +952,15 @@ function toggleEditMode() {
 }
 
 function recordUndo() {
+    // Check if an entry already exists for the current frame to prevent stacking identical states
+    if (undoStack.length > 0) {
+        const lastAction = undoStack[undoStack.length - 1];
+        if (lastAction.frameIndex === currentFrame) {
+            // Optional: You could check for deep equality here, but for simplicity, 
+            // we'll allow multiple undo steps on the same frame index if they come from different actions (e.g., drag, quick move).
+        }
+    }
+    
     const frameSnapshot = {};
     const frameData = animationFrames[currentFrame];
     for(let key in frameData) {
@@ -864,7 +968,27 @@ function recordUndo() {
         vec.userData = { ...frameData[key].userData };
         frameSnapshot[key] = vec;
     }
-    undoStack.push({ frameIndex: currentFrame, data: frameSnapshot });
+    
+    // For batch operations, we take a snapshot of ALL frames to allow resetting the entire animation array.
+    // However, given the initial undo stack only stores *per-frame* changes, 
+    // let's adjust the snapshot to handle the batch edit spanning multiple frames.
+    
+    // For the custom animation batch feature, we'll make a full copy of the entire animationFrames array, as it modifies multiple frames.
+    // Note: This is memory intensive but safest for batch operations.
+    
+    const fullSnapshot = animationFrames.map(frame => {
+        const snapshot = {};
+        for(let key in frame) {
+            const vec = frame[key].clone();
+            vec.userData = { ...frame[key].userData };
+            snapshot[key] = vec;
+        }
+        return snapshot;
+    });
+    
+    // Instead of pushing the frameIndex, we push null to indicate a full snapshot was taken
+    undoStack.push({ frameIndex: null, data: fullSnapshot }); 
+
     if(undoStack.length > MAX_UNDO) undoStack.shift();
     updateUndoBtn();
 }
@@ -872,11 +996,21 @@ function recordUndo() {
 function performUndo() {
     if(undoStack.length === 0) return;
     const action = undoStack.pop();
-    animationFrames[action.frameIndex] = action.data;
-    if(currentFrame === action.frameIndex) {
+    
+    // If action.frameIndex is null, it's a full snapshot (from batch edit or similar)
+    if (action.frameIndex === null) {
+        animationFrames = action.data; // Restore entire animation array
+        log("Full animation state restored via Undo.", "info");
+    } else {
+        // Original per-frame undo logic (might be removed or adjusted depending on feature set)
+        animationFrames[action.frameIndex] = action.data;
+    }
+    
+    if(currentFrame === (action.frameIndex ?? currentFrame)) {
         updateSkeletonPose(currentFrame);
         if(transformControl.object) transformControl.attach(transformControl.object);
     }
+    
     updateUndoBtn();
     log("Undo performed.", "info");
 }
@@ -1013,6 +1147,9 @@ function setupUI() {
         updateTransformScaleInfo();
         log(`Move scale factor set to: ${moveScaleFactor}x`, "info");
     });
+    
+    // NEW FEATURE: Wire up the custom animation button
+    document.getElementById('apply-custom-anim-btn').addEventListener('click', applyCustomAnimation);
     
     updateTransformScaleInfo();
 }
