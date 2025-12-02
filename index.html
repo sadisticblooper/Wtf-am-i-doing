@@ -12,9 +12,24 @@
     
     <style>
         #three-container { width: 100%; height: 600px; background: #1a1a2e; }
-        /* Custom Toggle Switch */
         .toggle-checkbox:checked { right: 0; border-color: #68D391; }
         .toggle-checkbox:checked + .toggle-label { background-color: #68D391; }
+        #debug-console {
+            font-family: 'Courier New', monospace;
+            font-size: 11px;
+            height: 150px;
+            overflow-y: auto;
+            background: #1a1a2e;
+            color: #00ff88;
+            padding: 8px;
+            border-radius: 4px;
+            margin-top: 10px;
+        }
+        .debug-log { margin: 2px 0; }
+        .debug-info { color: #88ccff; }
+        .debug-success { color: #00ff88; }
+        .debug-warning { color: #ffff00; }
+        .debug-error { color: #ff5555; }
     </style>
 </head>
 <body class="bg-gray-50 min-h-screen">
@@ -70,6 +85,15 @@
                             <option value="1" selected>1.0x Speed</option>
                             <option value="2">2.0x Speed</option>
                         </select>
+                    </div>
+                </div>
+
+                <div class="bg-white rounded-xl shadow-lg p-6 border-l-4 border-red-500">
+                    <h2 class="font-bold text-gray-800 mb-2">3. Debug Console</h2>
+                    <div id="debug-console"></div>
+                    <div class="flex space-x-2 mt-2">
+                        <button id="clear-debug" class="text-xs bg-gray-200 hover:bg-gray-300 px-2 py-1 rounded">Clear</button>
+                        <button id="test-mesh-path" class="text-xs bg-blue-200 hover:bg-blue-300 px-2 py-1 rounded">Test Mesh Path</button>
                     </div>
                 </div>
             </div>
@@ -164,10 +188,26 @@
                 this.speed = 1;
 
                 this.handleCSVFileSelect = this.handleCSVFileSelect.bind(this);
+                this.debugLog = this.debugLog.bind(this);
 
                 this.init();
                 this.parseHardcodedSkeleton();
                 this.loadFBXMesh();
+            }
+
+            debugLog(message, type = 'info') {
+                const consoleElement = document.getElementById('debug-console');
+                const timestamp = new Date().toLocaleTimeString();
+                const typeClass = `debug-${type}`;
+                const logElement = document.createElement('div');
+                logElement.className = `debug-log ${typeClass}`;
+                logElement.textContent = `[${timestamp}] ${message}`;
+                consoleElement.appendChild(logElement);
+                consoleElement.scrollTop = consoleElement.scrollHeight;
+                
+                // Also log to browser console
+                const consoleMethod = type === 'error' ? 'error' : type === 'warning' ? 'warn' : 'log';
+                console[consoleMethod](`[SF3 Viewer] ${message}`);
             }
 
             init() {
@@ -212,11 +252,13 @@
                 // Mesh control listeners
                 document.getElementById('show-mesh').addEventListener('change', (e) => {
                     if (this.mesh) this.mesh.visible = e.target.checked;
+                    this.debugLog(`Mesh visibility: ${e.target.checked ? 'ON' : 'OFF'}`, 'info');
                 });
                 
                 document.getElementById('show-skeleton').addEventListener('change', (e) => {
                     Object.values(this.bones).forEach(bone => bone.visible = e.target.checked);
                     Object.values(this.boneLines).forEach(line => line.line.visible = e.target.checked);
+                    this.debugLog(`Skeleton visibility: ${e.target.checked ? 'ON' : 'OFF'}`, 'info');
                 });
                 
                 document.getElementById('wireframe').addEventListener('change', (e) => {
@@ -226,7 +268,21 @@
                                 child.material.wireframe = e.target.checked;
                             }
                         });
+                        this.debugLog(`Wireframe: ${e.target.checked ? 'ON' : 'OFF'}`, 'info');
                     }
+                });
+
+                // Debug controls
+                document.getElementById('clear-debug').addEventListener('click', () => {
+                    document.getElementById('debug-console').innerHTML = '';
+                    this.debugLog('Debug console cleared', 'info');
+                });
+
+                document.getElementById('test-mesh-path').addEventListener('click', () => {
+                    this.debugLog('Testing mesh path...', 'info');
+                    this.debugLog(`Current URL: ${window.location.href}`, 'info');
+                    this.debugLog(`Attempting to load from: mesh.fbx (relative path)`, 'info');
+                    this.debugLog(`Make sure mesh.fbx is in same directory as this HTML file`, 'warning');
                 });
 
                 window.addEventListener('resize', () => {
@@ -234,6 +290,10 @@
                     this.camera.updateProjectionMatrix();
                     this.renderer.setSize(container.clientWidth, container.clientHeight);
                 });
+
+                this.debugLog('Animation Viewer initialized', 'success');
+                this.debugLog(`Three.js version: ${THREE.REVISION}`, 'info');
+                this.debugLog(`FBXLoader available: ${typeof THREE.FBXLoader !== 'undefined'}`, 'info');
 
                 this.loop();
             }
@@ -243,6 +303,7 @@
             }
 
             parseHardcodedSkeleton() {
+                this.debugLog('Parsing hardcoded skeleton...', 'info');
                 const lines = HARDCODED_SKELETON_RAW.trim().split('\n');
                 let stack = []; 
                 let idCounter = 0;
@@ -296,16 +357,19 @@
                         parentId: parentId,
                         bindLocalPos: bindLocalPos,
                         bindLocalRot: bindLocalRot,
-                        boneObject: null // Will store the actual THREE.Bone object
+                        boneObject: null
                     };
 
                     stack.push({ indent, id: currentId });
                 });
 
+                this.debugLog(`Parsed ${Object.keys(this.boneInfo).length} bones from skeleton`, 'success');
                 this.buildVisualSkeleton();
             }
 
             buildVisualSkeleton() {
+                this.debugLog('Building visual skeleton...', 'info');
+                
                 // Remove old bones and lines
                 Object.values(this.bones).forEach(b => this.scene.remove(b));
                 Object.values(this.boneLines).forEach(line => this.scene.remove(line));
@@ -322,7 +386,7 @@
                     const id = parseInt(idStr);
                     const info = this.boneInfo[id];
 
-                    // Create a bone object (for potential skinning)
+                    // Create a bone object
                     const bone = new THREE.Bone();
                     bone.name = info.name;
                     
@@ -356,14 +420,18 @@
                 });
 
                 // Create connection lines between parent and child bones
+                let lineCount = 0;
                 Object.keys(this.boneInfo).forEach(idStr => {
                     const id = parseInt(idStr);
                     const info = this.boneInfo[id];
                     
                     if(info.parentId !== null && this.bones[info.parentId] && this.bones[id]) {
                         this.createBoneLine(info.parentId, id);
+                        lineCount++;
                     }
                 });
+
+                this.debugLog(`Created skeleton with ${Object.keys(this.bones).length} bones and ${lineCount} connections`, 'success');
             }
 
             createBoneLine(parentId, childId) {
@@ -419,66 +487,131 @@
                 const loader = new THREE.FBXLoader();
                 const meshStatus = document.getElementById('mesh-status');
                 
-                try {
-                    meshStatus.textContent = "Loading mesh.fbx...";
-                    
-                    // Load the FBX file (assuming it's in the same directory as the HTML)
-                    loader.load('mesh.fbx', (object) => {
-                        this.mesh = object;
-                        
-                        // Scale and position the mesh if needed
-                        this.mesh.scale.set(0.01, 0.01, 0.01); // Adjust scale as needed
-                        this.mesh.position.set(0, 0, 0);
-                        
-                        // Enable shadows
-                        this.mesh.traverse((child) => {
-                            if (child.isMesh) {
-                                child.castShadow = true;
-                                child.receiveShadow = true;
-                                
-                                // Set a default material if needed
-                                if (!child.material) {
-                                    child.material = new THREE.MeshStandardMaterial({ 
-                                        color: 0xcccccc,
-                                        roughness: 0.7,
-                                        metalness: 0.2
-                                    });
-                                }
-                            }
-                        });
-                        
-                        // Add mesh to scene
-                        this.scene.add(this.mesh);
-                        
-                        // Try to find and apply skeleton to mesh
-                        this.applySkeletonToMesh();
-                        
-                        meshStatus.textContent = "Loaded successfully!";
-                        meshStatus.className = "text-green-500";
-                        
-                    }, (xhr) => {
-                        // Progress callback
-                        const percent = Math.round((xhr.loaded / xhr.total) * 100);
-                        meshStatus.textContent = `Loading: ${percent}%`;
-                    }, (error) => {
-                        // Error callback
-                        console.error('Error loading FBX:', error);
-                        meshStatus.textContent = "Error loading mesh.fbx";
+                this.debugLog('Starting FBX mesh loading...', 'info');
+                this.debugLog('Attempting to load: mesh.fbx', 'info');
+                
+                // Try multiple possible paths
+                const possiblePaths = [
+                    'mesh.fbx',
+                    './mesh.fbx',
+                    'mesh.fbx?cache=' + Date.now()  // Cache buster
+                ];
+                
+                let currentPathIndex = 0;
+                
+                const tryLoadMesh = (pathIndex) => {
+                    if (pathIndex >= possiblePaths.length) {
+                        this.debugLog('All mesh paths failed. Please check:', 'error');
+                        this.debugLog('1. Is mesh.fbx in the same directory as this HTML file?', 'warning');
+                        this.debugLog('2. Is your web server configured to serve .fbx files?', 'warning');
+                        this.debugLog('3. Check browser console (F12) for CORS or network errors', 'warning');
+                        meshStatus.textContent = "Failed to load mesh.fbx";
                         meshStatus.className = "text-red-500";
-                    });
+                        return;
+                    }
                     
-                } catch (error) {
-                    console.error('Failed to load FBX:', error);
-                    meshStatus.textContent = "Failed to load mesh";
-                    meshStatus.className = "text-red-500";
-                }
+                    const path = possiblePaths[pathIndex];
+                    this.debugLog(`Trying path ${pathIndex + 1}/${possiblePaths.length}: "${path}"`, 'info');
+                    
+                    loader.load(path, 
+                        // onLoad callback
+                        (object) => {
+                            this.debugLog(`Successfully loaded FBX from: ${path}`, 'success');
+                            this.debugLog(`FBX object type: ${object.type}`, 'info');
+                            this.debugLog(`FBX object name: ${object.name || 'unnamed'}`, 'info');
+                            
+                            this.mesh = object;
+                            
+                            // Log mesh structure
+                            let meshCount = 0;
+                            let boneCount = 0;
+                            let materialCount = 0;
+                            
+                            this.mesh.traverse((child) => {
+                                if (child.isMesh) {
+                                    meshCount++;
+                                    this.debugLog(`Found mesh: ${child.name || 'unnamed'} (${child.geometry.attributes.position.count} vertices)`, 'info');
+                                }
+                                if (child.isBone) {
+                                    boneCount++;
+                                    this.debugLog(`Found bone: ${child.name || 'unnamed'}`, 'info');
+                                }
+                                if (child.material) {
+                                    materialCount++;
+                                }
+                            });
+                            
+                            this.debugLog(`FBX contains: ${meshCount} meshes, ${boneCount} bones, ${materialCount} materials`, 'success');
+                            
+                            // Scale and position the mesh if needed
+                            this.mesh.scale.set(0.01, 0.01, 0.01);
+                            this.mesh.position.set(0, 0, 0);
+                            
+                            // Enable shadows and set up materials
+                            this.mesh.traverse((child) => {
+                                if (child.isMesh) {
+                                    child.castShadow = true;
+                                    child.receiveShadow = true;
+                                    
+                                    // Ensure material exists
+                                    if (!child.material) {
+                                        child.material = new THREE.MeshStandardMaterial({ 
+                                            color: 0xcccccc,
+                                            roughness: 0.7,
+                                            metalness: 0.2
+                                        });
+                                        this.debugLog(`Added default material to mesh: ${child.name || 'unnamed'}`, 'warning');
+                                    }
+                                    
+                                    // Check for skinning
+                                    if (child.geometry.attributes.skinWeight && child.geometry.attributes.skinIndex) {
+                                        this.debugLog(`Mesh "${child.name}" has skinning data`, 'success');
+                                    } else {
+                                        this.debugLog(`Mesh "${child.name}" has NO skinning data (won't deform)`, 'warning');
+                                    }
+                                }
+                            });
+                            
+                            // Add mesh to scene
+                            this.scene.add(this.mesh);
+                            
+                            // Try to find and apply skeleton to mesh
+                            this.applySkeletonToMesh();
+                            
+                            meshStatus.textContent = `Loaded: ${meshCount} meshes, ${boneCount} bones`;
+                            meshStatus.className = "text-green-500";
+                            
+                        }, 
+                        // onProgress callback
+                        (xhr) => {
+                            const percent = Math.round((xhr.loaded / xhr.total) * 100);
+                            this.debugLog(`Loading: ${percent}% (${(xhr.loaded/1024/1024).toFixed(2)} MB)`, 'info');
+                            meshStatus.textContent = `Loading: ${percent}%`;
+                        }, 
+                        // onError callback
+                        (error) => {
+                            this.debugLog(`Failed to load from "${path}": ${error.message || 'Unknown error'}`, 'error');
+                            this.debugLog(`Error details: ${JSON.stringify(error)}`, 'error');
+                            
+                            // Try next path
+                            setTimeout(() => {
+                                tryLoadMesh(pathIndex + 1);
+                            }, 100);
+                        }
+                    );
+                };
+                
+                // Start trying paths
+                tryLoadMesh(currentPathIndex);
             }
 
             applySkeletonToMesh() {
                 if (!this.mesh || !this.bones) {
-                    console.log("Mesh or bones not ready yet");
+                    this.debugLog("Cannot apply skeleton: mesh or bones not ready", 'warning');
                     return;
                 }
+
+                this.debugLog('Attempting to apply skeleton to mesh...', 'info');
 
                 // Find all meshes in the FBX
                 const meshes = [];
@@ -488,41 +621,71 @@
                     }
                 });
 
+                this.debugLog(`Found ${meshes.length} meshes in FBX`, 'info');
+
                 // For each mesh, try to apply skeleton
                 meshes.forEach(mesh => {
-                    if (mesh.geometry && !mesh.geometry.attributes.skinWeight) {
-                        // If mesh doesn't have skin weights, we can't properly skin it
-                        console.log(`Mesh "${mesh.name}" doesn't have skin weights`);
-                        return;
-                    }
-
-                    // Create a skeleton from our bones
-                    const bonesArray = Object.values(this.bones);
+                    this.debugLog(`Processing mesh: ${mesh.name || 'unnamed'}`, 'info');
                     
-                    if (bonesArray.length > 0) {
-                        // Create a skeleton helper for visualization
-                        if (!this.skeletonHelper) {
-                            this.skeletonHelper = new THREE.SkeletonHelper(this.mesh);
-                            this.skeletonHelper.material.linewidth = 3;
-                            this.skeletonHelper.visible = false; // Hide by default, we have our own lines
-                            this.scene.add(this.skeletonHelper);
-                        }
+                    if (mesh.geometry && mesh.geometry.attributes.skinWeight && mesh.geometry.attributes.skinIndex) {
+                        this.debugLog(`Mesh has skinning data (weights: ${mesh.geometry.attributes.skinWeight.count})`, 'success');
                         
-                        console.log(`Applied skeleton to mesh "${mesh.name}" with ${bonesArray.length} bones`);
+                        // Check if mesh already has a skeleton
+                        if (mesh.skeleton) {
+                            this.debugLog(`Mesh already has skeleton with ${mesh.skeleton.bones.length} bones`, 'info');
+                            
+                            // Create a skeleton helper for visualization
+                            if (!this.skeletonHelper) {
+                                this.skeletonHelper = new THREE.SkeletonHelper(this.mesh);
+                                this.skeletonHelper.material.linewidth = 3;
+                                this.skeletonHelper.visible = false;
+                                this.scene.add(this.skeletonHelper);
+                                this.debugLog('Created skeleton helper for visualization', 'success');
+                            }
+                        } else {
+                            this.debugLog('Mesh has no skeleton attached', 'warning');
+                            
+                            // Try to match bones by name
+                            const matchedBones = [];
+                            mesh.traverse((child) => {
+                                if (child.isBone && child.name) {
+                                    // Find matching bone in our skeleton
+                                    const boneId = Object.keys(this.boneInfo).find(id => 
+                                        this.boneInfo[id].name === child.name
+                                    );
+                                    if (boneId) {
+                                        matchedBones.push({fbxBone: child, ourBone: this.bones[boneId]});
+                                    }
+                                }
+                            });
+                            
+                            this.debugLog(`Matched ${matchedBones.length} bones by name`, matchedBones.length > 0 ? 'success' : 'warning');
+                        }
+                    } else {
+                        this.debugLog(`Mesh "${mesh.name}" doesn't have skin weights (won't deform with skeleton)`, 'warning');
                     }
                 });
+
+                if (meshes.length === 0) {
+                    this.debugLog('No meshes found in FBX file', 'error');
+                }
             }
 
             async loadCSV(file) {
                 if(!file) {
+                    this.debugLog('No CSV file selected', 'error');
                     document.getElementById('anim-status').textContent = `ERROR: No file detected.`;
                     document.getElementById('anim-status').className = "mt-2 text-xs text-red-500 font-bold";
                     return;
                 }
+                
+                this.debugLog(`Loading CSV file: ${file.name} (${(file.size/1024).toFixed(2)} KB)`, 'info');
                 const text = await file.text();
                 const lines = text.trim().split('\n');
                 
                 this.animData = {};
+                let validLines = 0;
+                let invalidLines = 0;
                 
                 // Skip header (1st line)
                 for(let i=1; i<lines.length; i++) {
@@ -530,7 +693,10 @@
                     const id = parseInt(parts[0]);
                     const fr = parseInt(parts[1]);
                     
-                    if (parts.length < 9 || isNaN(id) || isNaN(fr)) continue;
+                    if (parts.length < 9 || isNaN(id) || isNaN(fr)) {
+                        invalidLines++;
+                        continue;
+                    }
 
                     if(!this.animData[fr]) this.animData[fr] = {};
                     
@@ -538,12 +704,18 @@
                         pos: [parseFloat(parts[2])/100, parseFloat(parts[3])/100, parseFloat(parts[4])/100],
                         rot: [parseFloat(parts[5]), parseFloat(parts[6]), parseFloat(parts[7]), parseFloat(parts[8])]
                     };
+                    validLines++;
                 }
 
                 this.totalFrames = Object.keys(this.animData).length;
                 document.getElementById('frame-slider').max = this.totalFrames;
-                document.getElementById('anim-status').textContent = `Loaded ${this.totalFrames} frames from ${file.name}.`;
+                
+                const statusText = `Loaded ${this.totalFrames} frames, ${validLines} bone entries (${invalidLines} invalid lines ignored)`;
+                document.getElementById('anim-status').textContent = statusText;
                 document.getElementById('anim-status').className = "mt-2 text-xs text-green-500 font-bold";
+                
+                this.debugLog(statusText, 'success');
+                this.debugLog(`Frame range: ${Math.min(...Object.keys(this.animData).map(Number))} to ${Math.max(...Object.keys(this.animData).map(Number))}`, 'info');
                 
                 this.frame = 1;
                 this.applyFrame();
@@ -551,8 +723,13 @@
             }
 
             applyFrame() {
-                if(!this.animData[this.frame]) return;
+                if(!this.animData[this.frame]) {
+                    this.debugLog(`No data for frame ${this.frame}`, 'warning');
+                    return;
+                }
+                
                 const frameData = this.animData[this.frame];
+                let appliedBones = 0;
 
                 Object.keys(this.bones).forEach(idStr => {
                     const id = parseInt(idStr);
@@ -565,6 +742,7 @@
                         
                         // Apply animation position
                         bone.position.set(data.pos[0], data.pos[1], data.pos[2]);
+                        appliedBones++;
                     }
                 });
                 
@@ -580,10 +758,15 @@
                 if (this.mesh && this.mesh.skeleton) {
                     this.mesh.skeleton.update();
                 }
+                
+                if (appliedBones === 0) {
+                    this.debugLog(`Frame ${this.frame}: No bones matched CSV data`, 'warning');
+                }
             }
 
             togglePlay() {
                 this.isPlaying = !this.isPlaying;
+                this.debugLog(`Animation ${this.isPlaying ? 'playing' : 'paused'}`, 'info');
                 this.updateUI();
             }
 
