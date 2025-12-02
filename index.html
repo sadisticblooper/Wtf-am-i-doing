@@ -3,168 +3,119 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Shadow Fight 3 Animation Viewer</title>
+    <title>SF3 Animation Binary Viewer</title>
     <style>
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
+            font-family: 'Courier New', monospace;
         }
 
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
-            color: #e6e6e6;
+            background: #0a0a0f;
+            color: #e0e0ff;
             min-height: 100vh;
             padding: 20px;
         }
 
         .container {
-            max-width: 1200px;
+            max-width: 1400px;
             margin: 0 auto;
-            padding: 20px;
         }
 
         header {
             text-align: center;
-            margin-bottom: 40px;
+            margin-bottom: 30px;
             padding: 20px;
-            background: rgba(0, 0, 0, 0.3);
-            border-radius: 15px;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-            border: 1px solid rgba(255, 255, 255, 0.1);
+            background: rgba(20, 20, 40, 0.8);
+            border-radius: 10px;
+            border: 1px solid #333366;
         }
 
         h1 {
-            color: #ff6b6b;
-            font-size: 2.8em;
+            color: #ff5555;
+            font-size: 2.5em;
             margin-bottom: 10px;
-            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+            text-shadow: 0 0 10px rgba(255, 85, 85, 0.3);
         }
 
         .subtitle {
-            color: #4ecdc4;
-            font-size: 1.2em;
-            opacity: 0.9;
-        }
-
-        .upload-section {
-            background: rgba(255, 255, 255, 0.05);
-            padding: 30px;
-            border-radius: 15px;
-            margin-bottom: 30px;
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
-            border: 2px dashed #4ecdc4;
-            transition: all 0.3s ease;
-        }
-
-        .upload-section:hover {
-            border-color: #ff6b6b;
-            transform: translateY(-2px);
-        }
-
-        .file-input-wrapper {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 20px;
-        }
-
-        .file-label {
-            background: linear-gradient(45deg, #4ecdc4, #44a08d);
-            color: white;
-            padding: 15px 40px;
-            border-radius: 50px;
-            cursor: pointer;
+            color: #55aaff;
             font-size: 1.1em;
-            font-weight: bold;
-            transition: all 0.3s ease;
-            box-shadow: 0 4px 15px rgba(78, 205, 196, 0.3);
         }
 
-        .file-label:hover {
-            background: linear-gradient(45deg, #ff6b6b, #ff8e8e);
-            transform: scale(1.05);
-            box-shadow: 0 6px 20px rgba(255, 107, 107, 0.4);
+        .upload-box {
+            background: rgba(20, 20, 40, 0.8);
+            padding: 25px;
+            border-radius: 10px;
+            border: 2px dashed #5555ff;
+            margin-bottom: 30px;
+            text-align: center;
         }
 
         #fileInput {
             display: none;
         }
 
-        .selected-file {
-            margin-top: 15px;
-            padding: 10px;
-            background: rgba(0, 0, 0, 0.2);
-            border-radius: 8px;
-            display: none;
-        }
-
-        .selected-file.show {
-            display: block;
-        }
-
-        .action-buttons {
-            display: flex;
-            gap: 15px;
-            margin-top: 10px;
-            flex-wrap: wrap;
-            justify-content: center;
-        }
-
-        .parse-button, .export-button, .export-all-button {
-            background: linear-gradient(45deg, #ff6b6b, #ff8e8e);
+        .file-button {
+            background: linear-gradient(45deg, #ff5555, #aa5555);
             color: white;
             border: none;
             padding: 15px 40px;
-            border-radius: 50px;
-            font-size: 1.1em;
-            font-weight: bold;
+            border-radius: 5px;
+            font-size: 1.2em;
             cursor: pointer;
-            transition: all 0.3s ease;
-            box-shadow: 0 4px 15px rgba(255, 107, 107, 0.3);
-            min-width: 180px;
+            margin-bottom: 20px;
+            transition: all 0.3s;
         }
 
-        .export-button {
-            background: linear-gradient(45deg, #4ecdc4, #44a08d);
-            box-shadow: 0 4px 15px rgba(78, 205, 196, 0.3);
+        .file-button:hover {
+            background: linear-gradient(45deg, #ff7777, #cc5555);
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(255, 85, 85, 0.4);
         }
 
-        .export-all-button {
-            background: linear-gradient(45deg, #9d4edd, #7b2cbf);
-            box-shadow: 0 4px 15px rgba(157, 78, 221, 0.3);
+        .file-info {
+            margin-top: 15px;
+            color: #55ff55;
+            font-size: 0.9em;
         }
 
-        .parse-button:hover:not(:disabled),
-        .export-button:hover:not(:disabled),
-        .export-all-button:hover:not(:disabled) {
-            transform: scale(1.05);
-            box-shadow: 0 6px 20px rgba(255, 107, 107, 0.5);
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 20px;
+            margin-bottom: 30px;
         }
 
-        .export-button:hover:not(:disabled) {
-            box-shadow: 0 6px 20px rgba(78, 205, 196, 0.5);
+        .stat-box {
+            background: rgba(30, 30, 60, 0.8);
+            padding: 20px;
+            border-radius: 8px;
+            border-left: 4px solid #5555ff;
         }
 
-        .export-all-button:hover:not(:disabled) {
-            box-shadow: 0 6px 20px rgba(157, 78, 221, 0.5);
+        .stat-value {
+            font-size: 2.5em;
+            color: #ffaa55;
+            font-weight: bold;
         }
 
-        .parse-button:disabled,
-        .export-button:disabled,
-        .export-all-button:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-            transform: none !important;
+        .stat-label {
+            color: #aaddff;
+            font-size: 0.9em;
+            margin-top: 5px;
         }
 
         .controls {
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            gap: 20px;
+            background: rgba(20, 20, 40, 0.8);
+            padding: 20px;
+            border-radius: 10px;
             margin-bottom: 30px;
+            display: flex;
+            gap: 20px;
+            align-items: center;
             flex-wrap: wrap;
         }
 
@@ -172,226 +123,189 @@
             display: flex;
             align-items: center;
             gap: 10px;
-            background: rgba(255, 255, 255, 0.05);
-            padding: 15px;
-            border-radius: 10px;
         }
 
         .control-label {
-            color: #4ecdc4;
-            font-weight: bold;
+            color: #55aaff;
         }
 
-        .frame-selector {
-            padding: 10px 15px;
-            background: rgba(255, 255, 255, 0.1);
-            border: 2px solid #4ecdc4;
-            border-radius: 8px;
+        select {
+            background: rgba(0, 0, 0, 0.5);
             color: white;
-            font-size: 1em;
+            border: 1px solid #5555ff;
+            padding: 8px 15px;
+            border-radius: 5px;
             min-width: 150px;
         }
 
-        .bone-selector {
-            padding: 10px 15px;
-            background: rgba(255, 255, 255, 0.1);
-            border: 2px solid #ff6b6b;
-            border-radius: 8px;
-            color: white;
-            font-size: 1em;
-            min-width: 150px;
+        #frameSlider {
+            flex: 1;
+            min-width: 300px;
+            background: rgba(0, 0, 0, 0.5);
+            height: 10px;
+            border-radius: 5px;
+            -webkit-appearance: none;
         }
 
-        .stats {
+        #frameSlider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 20px;
+            height: 20px;
+            background: #ff5555;
+            border-radius: 50%;
+            cursor: pointer;
+        }
+
+        .data-section {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 20px;
-            margin-bottom: 30px;
-        }
-
-        .stat-card {
-            background: rgba(255, 255, 255, 0.05);
-            padding: 25px;
-            border-radius: 15px;
-            text-align: center;
-            transition: all 0.3s ease;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-        }
-
-        .stat-card:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
-            border-color: #4ecdc4;
-        }
-
-        .stat-value {
-            font-size: 2.5em;
-            color: #ff6b6b;
-            font-weight: bold;
-            margin: 10px 0;
-        }
-
-        .stat-label {
-            color: #4ecdc4;
-            font-size: 1.1em;
-            opacity: 0.9;
-        }
-
-        .frame-data {
-            background: rgba(255, 255, 255, 0.05);
-            padding: 30px;
-            border-radius: 15px;
-            margin-top: 30px;
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-        }
-
-        .frame-header {
-            color: #ff6b6b;
-            font-size: 1.8em;
-            margin-bottom: 25px;
-            padding-bottom: 15px;
-            border-bottom: 2px solid rgba(78, 205, 196, 0.3);
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
         }
 
         .bone-list {
-            display: grid;
-            gap: 20px;
-        }
-
-        .bone-card {
-            background: rgba(0, 0, 0, 0.2);
+            background: rgba(20, 20, 40, 0.8);
             padding: 20px;
             border-radius: 10px;
-            border-left: 4px solid #4ecdc4;
-            transition: all 0.3s ease;
+            border: 1px solid #333366;
+            max-height: 600px;
+            overflow-y: auto;
         }
 
-        .bone-card:hover {
-            transform: translateX(5px);
-            background: rgba(0, 0, 0, 0.3);
-            border-left-color: #ff6b6b;
+        .bone-item {
+            background: rgba(40, 40, 80, 0.5);
+            padding: 15px;
+            margin-bottom: 15px;
+            border-radius: 8px;
+            border-left: 3px solid #55aaff;
+        }
+
+        .bone-header {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 10px;
         }
 
         .bone-id {
-            color: #ff6b6b;
-            font-size: 1.3em;
-            margin-bottom: 15px;
+            color: #ffaa55;
             font-weight: bold;
-        }
-
-        .transform-data {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 20px;
-        }
-
-        .position-data, .rotation-data {
-            padding: 15px;
-            background: rgba(255, 255, 255, 0.03);
-            border-radius: 8px;
-        }
-
-        .data-label {
-            color: #4ecdc4;
-            margin-bottom: 8px;
-            font-weight: bold;
-        }
-
-        .data-value {
-            color: #e6e6e6;
-            font-family: 'Courier New', monospace;
             font-size: 1.1em;
         }
 
-        .loading {
-            display: none;
-            text-align: center;
-            padding: 40px;
+        .bone-index {
+            color: #55ff55;
+            font-size: 0.9em;
         }
 
-        .loading.show {
-            display: block;
-        }
-
-        .spinner {
-            border: 4px solid rgba(255, 255, 255, 0.1);
-            border-top: 4px solid #4ecdc4;
-            border-radius: 50%;
-            width: 60px;
-            height: 60px;
-            animation: spin 1s linear infinite;
-            margin: 0 auto 20px;
-        }
-
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-
-        .error {
-            background: rgba(255, 107, 107, 0.1);
-            color: #ff6b6b;
-            padding: 20px;
-            border-radius: 10px;
-            margin: 20px 0;
-            border: 1px solid rgba(255, 107, 107, 0.3);
-            display: none;
-        }
-
-        .success {
-            background: rgba(78, 205, 196, 0.1);
-            color: #4ecdc4;
-            padding: 20px;
-            border-radius: 10px;
-            margin: 20px 0;
-            border: 1px solid rgba(78, 205, 196, 0.3);
-            display: none;
-        }
-
-        .error.show, .success.show {
-            display: block;
-        }
-
-        .export-options {
-            display: flex;
+        .transform-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
             gap: 15px;
-            margin-top: 20px;
-            justify-content: center;
-            flex-wrap: wrap;
         }
 
-        .format-select {
-            padding: 10px 15px;
-            background: rgba(255, 255, 255, 0.1);
-            border: 2px solid #9d4edd;
+        .transform-box {
+            background: rgba(0, 0, 0, 0.3);
+            padding: 10px;
+            border-radius: 5px;
+        }
+
+        .transform-label {
+            color: #55aaff;
+            font-size: 0.9em;
+            margin-bottom: 5px;
+        }
+
+        .transform-values {
+            color: #e0e0ff;
+            font-size: 0.9em;
+            line-height: 1.4;
+        }
+
+        .raw-data {
+            background: rgba(20, 20, 40, 0.8);
+            padding: 20px;
+            border-radius: 10px;
+            border: 1px solid #333366;
+        }
+
+        .raw-header {
+            color: #ff5555;
+            margin-bottom: 15px;
+            font-size: 1.2em;
+        }
+
+        .hex-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .hex-item {
+            background: rgba(0, 0, 0, 0.3);
+            padding: 8px;
+            border-radius: 5px;
+            text-align: center;
+        }
+
+        .hex-label {
+            color: #55aaff;
+            font-size: 0.8em;
+        }
+
+        .hex-value {
+            color: #55ff55;
+            font-size: 1.1em;
+            font-family: monospace;
+        }
+
+        .messages {
+            margin-bottom: 30px;
+        }
+
+        .message {
+            padding: 15px;
             border-radius: 8px;
-            color: white;
-            font-size: 1em;
-            min-width: 150px;
+            margin-bottom: 10px;
+            display: none;
+        }
+
+        .message.error {
+            background: rgba(255, 85, 85, 0.1);
+            border: 1px solid rgba(255, 85, 85, 0.3);
+            color: #ffaaaa;
+            display: block;
+        }
+
+        .message.success {
+            background: rgba(85, 255, 85, 0.1);
+            border: 1px solid rgba(85, 255, 85, 0.3);
+            color: #aaffaa;
+            display: block;
+        }
+
+        .message.warning {
+            background: rgba(255, 255, 85, 0.1);
+            border: 1px solid rgba(255, 255, 85, 0.3);
+            color: #ffffaa;
+            display: block;
         }
 
         @media (max-width: 768px) {
-            .transform-data {
+            .data-section {
+                grid-template-columns: 1fr;
+            }
+            
+            .stats {
                 grid-template-columns: 1fr;
             }
             
             .controls {
                 flex-direction: column;
+                align-items: stretch;
             }
             
-            .action-buttons {
-                flex-direction: column;
-                align-items: center;
-            }
-            
-            .parse-button, .export-button, .export-all-button {
-                width: 100%;
-                max-width: 300px;
-            }
-            
-            h1 {
-                font-size: 2em;
+            #frameSlider {
+                min-width: auto;
             }
         }
     </style>
@@ -399,309 +313,418 @@
 <body>
     <div class="container">
         <header>
-            <h1>Shadow Fight 3 Animation Viewer</h1>
-            <p class="subtitle">Upload your animation file to view frame and bone data</p>
+            <h1>SF3 ANIMATION BINARY VIEWER</h1>
+            <p class="subtitle">Upload Shadow Fight 3 animation binary files (.bin)</p>
         </header>
 
-        <section class="upload-section">
-            <div class="file-input-wrapper">
-                <label for="fileInput" class="file-label">
-                    📁 Choose Animation File
-                </label>
-                <input type="file" id="fileInput" accept=".bin,.dat,.anim">
-                <div id="selectedFileName" class="selected-file"></div>
-                
-                <div class="action-buttons">
-                    <button id="parseButton" class="parse-button" disabled>Parse Animation</button>
-                    <button id="exportButton" class="export-button" disabled>Export Current Frame</button>
-                    <button id="exportAllButton" class="export-all-button" disabled>Export All Frames</button>
+        <div class="messages">
+            <div id="errorMessage" class="message error"></div>
+            <div id="successMessage" class="message success"></div>
+            <div id="warningMessage" class="message warning"></div>
+        </div>
+
+        <div class="upload-box">
+            <label for="fileInput" class="file-button">📁 SELECT ANIMATION FILE</label>
+            <input type="file" id="fileInput" accept=".bin">
+            <div id="fileInfo" class="file-info"></div>
+        </div>
+
+        <div id="stats" style="display: none;">
+            <div class="stats">
+                <div class="stat-box">
+                    <div class="stat-value" id="totalFrames">0</div>
+                    <div class="stat-label">TOTAL FRAMES</div>
                 </div>
-                
-                <div class="export-options" style="display: none;" id="exportOptions">
-                    <select id="formatSelect" class="format-select">
-                        <option value="csv">CSV Format</option>
-                        <option value="json">JSON Format</option>
+                <div class="stat-box">
+                    <div class="stat-value" id="totalBones">0</div>
+                    <div class="stat-label">TOTAL BONES</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-value" id="currentFrameNum">0</div>
+                    <div class="stat-label">CURRENT FRAME</div>
+                </div>
+            </div>
+
+            <div class="controls">
+                <div class="control-group">
+                    <span class="control-label">FRAME:</span>
+                    <select id="frameSelect"></select>
+                </div>
+                <div class="control-group">
+                    <span class="control-label">BONE:</span>
+                    <select id="boneSelect">
+                        <option value="all">ALL BONES</option>
                     </select>
                 </div>
+                <input type="range" id="frameSlider" min="1" max="100" value="1">
+                <div class="control-group">
+                    <button id="exportBtn" style="background: #5555ff; color: white; border: none; padding: 8px 15px; border-radius: 5px; cursor: pointer;">
+                        EXPORT CSV
+                    </button>
+                </div>
             </div>
-        </section>
 
-        <div class="error" id="errorMessage"></div>
-        <div class="success" id="successMessage"></div>
-
-        <div class="loading" id="loading">
-            <div class="spinner"></div>
-            <p>Parsing animation data...</p>
-        </div>
-
-        <div class="controls" id="controls" style="display: none;">
-            <div class="control-group">
-                <span class="control-label">Frame:</span>
-                <select id="frameSelector" class="frame-selector"></select>
-            </div>
-            <div class="control-group">
-                <span class="control-label">Bone Filter:</span>
-                <select id="boneSelector" class="bone-selector">
-                    <option value="all">All Bones</option>
-                </select>
+            <div class="data-section">
+                <div class="bone-list">
+                    <h3 style="color: #55aaff; margin-bottom: 15px;">BONE TRANSFORMS</h3>
+                    <div id="boneList"></div>
+                </div>
+                <div class="raw-data">
+                    <h3 class="raw-header">RAW BINARY DATA</h3>
+                    <div id="rawData"></div>
+                </div>
             </div>
         </div>
-
-        <div class="stats" id="stats" style="display: none;">
-            <div class="stat-card">
-                <div class="stat-value" id="totalFrames">0</div>
-                <div class="stat-label">Total Frames</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-value" id="totalBones">0</div>
-                <div class="stat-label">Total Bones</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-value" id="currentFrame">1</div>
-                <div class="stat-label">Current Frame</div>
-            </div>
-        </div>
-
-        <section class="frame-data" id="frameData" style="display: none;">
-            <h2 class="frame-header">Frame Data</h2>
-            <div class="bone-list" id="boneList"></div>
-        </section>
     </div>
 
     <script>
-        class AnimationParser {
+        class SF3AnimationParser {
             constructor() {
-                this.animationData = null;
+                this.data = null;
+                this.frames = [];
+                this.boneIds = [];
                 this.currentFrame = 1;
                 this.currentBoneFilter = 'all';
-                this.boneIds = [];
             }
 
-            // Convert half-precision float (16-bit) to JavaScript float (32-bit)
+            // Simple half to float conversion
             halfToFloat(h) {
                 const s = (h & 0x8000) >> 15;
                 const e = (h & 0x7C00) >> 10;
                 const f = h & 0x03FF;
-                
+
                 if (e === 0) {
-                    return (s ? -1 : 1) * Math.pow(2, -14) * (f / Math.pow(2, 10));
-                } else if (e === 0x1F) {
-                    return f ? NaN : ((s ? -1 : 1) * Infinity);
+                    return (s ? -1 : 1) * Math.pow(2, -14) * (f / 1024);
+                } else if (e === 31) {
+                    return f ? NaN : (s ? -Infinity : Infinity);
                 }
-                
-                return (s ? -1 : 1) * Math.pow(2, e - 15) * (1 + f / Math.pow(2, 10));
+
+                return (s ? -1 : 1) * Math.pow(2, e - 15) * (1 + f / 1024);
             }
 
-            // Parse compressed quaternion from three 16-bit values - EXACT IMPLEMENTATION FROM C++ CODE
-            parseCompressedQuaternion(v0, v1, v2) {
-                // These values are from staticField struct
+            // Fix: Correct quaternion decompression from C++ code
+            decompressQuaternion(v0, v1, v2) {
                 const maxValue = 1.4142135;
-                const maxValueShift = 0.70710677;
-                const scale = 1.0 / 32767.0;
-                
-                // Calculate v2, v4, v5 as in C++ code
-                const v2_val = ((v1 >> 14) + 4 * (v0 & 0x1FFF));
-                const v4 = ((v2 >> 15) + 2 * (v1 & 0x3FFF));
-                const v5 = (v2 & 0x7FFF);
-                
-                // Calculate v10, v11, v12
-                const v10 = (v2_val * scale * maxValue) - maxValueShift;
-                const v11 = (v4 * scale * maxValue) - maxValueShift;
-                const v12 = (v5 * scale * maxValue) - maxValueShift;
-                
-                // Calculate v13
-                const v13 = Math.sqrt(Math.max(0, 1.0 - (v10 * v10) - (v11 * v11) - (v12 * v12)));
-                
-                // Get v14 (the missing component selector)
-                const v14 = (v0 >> 13) & 3;
-                
+                const shift = 0.70710677;
+                const scale = maxValue / 32767.0;
+
+                // Calculate v2, v4, v5 as per C++ code
+                const v2_val = (v1 >> 14) + 4 * (v0 & 0x1FFF);
+                const v4 = (v2 >> 15) + 2 * (v1 & 0x3FFF);
+                const v5 = v2 & 0x7FFF;
+
+                // Decompress values
+                const a = v2_val * scale - shift;
+                const b = v4 * scale - shift;
+                const c = v5 * scale - shift;
+
+                // Calculate fourth component
+                const d = Math.sqrt(Math.max(0, 1 - a*a - b*b - c*c));
+
+                // Get missing component index
+                const missing = (v0 >> 13) & 3;
+
+                // Reconstruct quaternion based on missing component
                 let x, y, z, w;
-                
-                if (v14 === 1) {
-                    // Missing component is x
-                    x = v13;
-                    y = v10;
-                    z = v11;
-                    w = v12;
-                } else if (v14 === 2) {
-                    // Missing component is y
-                    x = v10;
-                    y = v13;
-                    z = v11;
-                    w = v12;
-                } else if (v14 === 3) {
-                    // Missing component is w
-                    x = v10;
-                    y = v11;
-                    z = v12;
-                    w = v13;
-                } else {
-                    // Missing component is z (v14 == 0)
-                    x = v10;
-                    y = v11;
-                    z = v13;
-                    w = v12;
+                if (missing === 0) { // x is missing
+                    x = d;
+                    y = a;
+                    z = b;
+                    w = c;
+                } else if (missing === 1) { // y is missing
+                    x = a;
+                    y = d;
+                    z = b;
+                    w = c;
+                } else if (missing === 2) { // z is missing
+                    x = a;
+                    y = b;
+                    z = d;
+                    w = c;
+                } else { // w is missing (missing === 3)
+                    x = a;
+                    y = b;
+                    z = c;
+                    w = d;
                 }
-                
-                // Normalize the quaternion
-                const length = Math.sqrt(x*x + y*y + z*z + w*w);
-                if (length > 0) {
-                    x /= length;
-                    y /= length;
-                    z /= length;
-                    w /= length;
+
+                // Normalize quaternion
+                const len = Math.sqrt(x*x + y*y + z*z + w*w);
+                if (len > 0) {
+                    x /= len;
+                    y /= len;
+                    z /= len;
+                    w /= len;
                 }
-                
+
                 return [x, y, z, w];
             }
 
-            async parseAnimationData(arrayBuffer) {
-                try {
-                    const dataView = new DataView(arrayBuffer);
-                    let offset = 0;
+            parseBinary(dataView) {
+                let offset = 0;
+                
+                // Check header
+                const header = dataView.getBigInt64(offset, true);
+                offset += 8;
+                
+                if (header !== 457546134634734n) {
+                    throw new Error(`Invalid file format. Expected header 457546134634734, got ${header}`);
+                }
 
-                    // Read header
-                    const header = dataView.getBigInt64(offset, true);
-                    offset += 8;
+                // Read array count
+                const arrayCount = dataView.getInt16(offset, true);
+                offset += 2;
 
-                    if (header !== 457546134634734n) {
-                        throw new Error('Invalid animation file format. Expected header: 457546134634734');
-                    }
+                // Skip garbage buffer
+                offset += arrayCount * 8;
 
-                    // Read array count
-                    const arrayCount = dataView.getInt16(offset, true);
+                // Read frame count
+                const frameCount = dataView.getInt32(offset, true);
+                offset += 4;
+
+                // Read bone count
+                const boneCount = dataView.getInt32(offset, true);
+                offset += 4;
+
+                // Read bone IDs
+                this.boneIds = [];
+                for (let i = 0; i < boneCount; i++) {
+                    this.boneIds.push(dataView.getInt16(offset, true));
                     offset += 2;
+                }
 
-                    // Skip garbage buffer
-                    offset += arrayCount * 8;
-
-                    // Read frames count
-                    const framesCount = dataView.getInt32(offset, true);
-                    offset += 4;
-
-                    // Read bones count
-                    const bonesCount = dataView.getInt32(offset, true);
-                    offset += 4;
-
-                    // Read bone IDs
-                    this.boneIds = [];
-                    for (let i = 0; i < bonesCount; i++) {
-                        this.boneIds.push(dataView.getInt16(offset, true));
-                        offset += 2;
-                    }
-
-                    // Read frames data
-                    const frames = [];
-                    const totalBoneEntries = framesCount * bonesCount * 6; // 6 uint16 per bone
-                    
-                    for (let frameIndex = 0; frameIndex < framesCount; frameIndex++) {
-                        const frame = {
-                            frameNumber: frameIndex + 1,
-                            bones: []
-                        };
-
-                        for (let boneIndex = 0; boneIndex < bonesCount; boneIndex++) {
-                            const px = dataView.getUint16(offset, true); offset += 2;
-                            const py = dataView.getUint16(offset, true); offset += 2;
-                            const pz = dataView.getUint16(offset, true); offset += 2;
-                            const v0 = dataView.getUint16(offset, true); offset += 2;
-                            const v1 = dataView.getUint16(offset, true); offset += 2;
-                            const v2 = dataView.getUint16(offset, true); offset += 2;
-
-                            // Convert half-precision position
-                            const position = [
-                                this.halfToFloat(px),
-                                this.halfToFloat(py),
-                                this.halfToFloat(pz)
-                            ];
-
-                            // Parse compressed quaternion
-                            const rotation = this.parseCompressedQuaternion(v0, v1, v2);
-
-                            frame.bones.push({
-                                boneId: this.boneIds[boneIndex],
-                                position: position,
-                                rotation: rotation,
-                                rawData: { 
-                                    px, py, pz, 
-                                    v0, v1, v2,
-                                    v0_hex: v0.toString(16).padStart(4, '0'),
-                                    v1_hex: v1.toString(16).padStart(4, '0'),
-                                    v2_hex: v2.toString(16).padStart(4, '0')
-                                }
-                            });
-                        }
-
-                        frames.push(frame);
-                    }
-
-                    this.animationData = {
-                        frames: frames,
-                        framesCount: framesCount,
-                        bonesCount: bonesCount,
-                        boneIds: this.boneIds,
-                        totalBytesRead: offset
+                // Parse frames
+                this.frames = [];
+                for (let frameIdx = 0; frameIdx < frameCount; frameIdx++) {
+                    const frame = {
+                        index: frameIdx + 1,
+                        bones: []
                     };
 
-                    return this.animationData;
+                    for (let boneIdx = 0; boneIdx < boneCount; boneIdx++) {
+                        // Read 6 uint16 values per bone
+                        const px = dataView.getUint16(offset, true); offset += 2;
+                        const py = dataView.getUint16(offset, true); offset += 2;
+                        const pz = dataView.getUint16(offset, true); offset += 2;
+                        const v0 = dataView.getUint16(offset, true); offset += 2;
+                        const v1 = dataView.getUint16(offset, true); offset += 2;
+                        const v2 = dataView.getUint16(offset, true); offset += 2;
 
-                } catch (error) {
-                    console.error('Error parsing animation:', error);
-                    throw error;
-                }
-            }
+                        // Convert position
+                        const pos = [
+                            this.halfToFloat(px),
+                            this.halfToFloat(py),
+                            this.halfToFloat(pz)
+                        ];
 
-            getCurrentFrame() {
-                if (!this.animationData || this.currentFrame < 1 || this.currentFrame > this.animationData.framesCount) {
-                    return null;
-                }
-                return this.animationData.frames[this.currentFrame - 1];
-            }
+                        // Decompress quaternion
+                        const rot = this.decompressQuaternion(v0, v1, v2);
 
-            getFrameData(frameIndex) {
-                if (!this.animationData || frameIndex < 1 || frameIndex > this.animationData.framesCount) {
-                    return null;
-                }
-                return this.animationData.frames[frameIndex - 1];
-            }
+                        frame.bones.push({
+                            boneId: this.boneIds[boneIdx],
+                            position: pos,
+                            rotation: rot,
+                            raw: { px, py, pz, v0, v1, v2 }
+                        });
+                    }
 
-            setFrame(frameNumber) {
-                if (frameNumber >= 1 && frameNumber <= this.animationData.framesCount) {
-                    this.currentFrame = frameNumber;
-                    return true;
-                }
-                return false;
-            }
-
-            setBoneFilter(boneId) {
-                this.currentBoneFilter = boneId;
-            }
-
-            getFilteredBones() {
-                const frame = this.getCurrentFrame();
-                if (!frame) return [];
-
-                if (this.currentBoneFilter === 'all') {
-                    return frame.bones;
+                    this.frames.push(frame);
                 }
 
-                const boneId = parseInt(this.currentBoneFilter);
-                return frame.bones.filter(bone => bone.boneId === boneId);
+                return {
+                    frames: this.frames,
+                    frameCount,
+                    boneCount,
+                    boneIds: this.boneIds,
+                    totalSize: offset
+                };
+            }
+        }
+
+        class Viewer {
+            constructor() {
+                this.parser = new SF3AnimationParser();
+                this.currentFrame = 1;
+                this.init();
             }
 
-            getAllAnimationDataCSV() {
-                if (!this.animationData) return '';
-                
-                const csvRows = ['bone_id,frame_number,position_x,position_y,position_z,rotation_x,rotation_y,rotation_z,rotation_w'];
-                
-                for (let frameIndex = 0; frameIndex < this.animationData.framesCount; frameIndex++) {
-                    const frame = this.animationData.frames[frameIndex];
-                    const frameNumber = frameIndex + 1;
+            init() {
+                document.getElementById('fileInput').addEventListener('change', (e) => this.handleFile(e));
+                document.getElementById('frameSelect').addEventListener('change', (e) => this.changeFrame(parseInt(e.target.value)));
+                document.getElementById('boneSelect').addEventListener('change', (e) => this.filterBones(e.target.value));
+                document.getElementById('frameSlider').addEventListener('input', (e) => {
+                    this.changeFrame(parseInt(e.target.value));
+                    document.getElementById('frameSelect').value = e.target.value;
+                });
+                document.getElementById('exportBtn').addEventListener('click', () => this.exportCSV());
+            }
+
+            showMessage(type, text) {
+                const msg = document.getElementById(`${type}Message`);
+                msg.textContent = text;
+                msg.style.display = 'block';
+                setTimeout(() => msg.style.display = 'none', 5000);
+            }
+
+            async handleFile(event) {
+                const file = event.target.files[0];
+                if (!file) return;
+
+                document.getElementById('fileInfo').textContent = `File: ${file.name} (${(file.size/1024).toFixed(2)} KB)`;
+
+                try {
+                    const buffer = await file.arrayBuffer();
+                    const dataView = new DataView(buffer);
                     
-                    for (const bone of frame.bones) {
+                    const result = this.parser.parseBinary(dataView);
+                    
+                    this.showUI(result);
+                    this.updateFrameSelect(result.frameCount);
+                    this.updateBoneSelect(result.boneIds);
+                    this.displayFrame(1);
+                    
+                    this.showMessage('success', `Loaded ${result.frameCount} frames, ${result.boneCount} bones`);
+                    
+                } catch (error) {
+                    this.showMessage('error', `Error: ${error.message}`);
+                    console.error('Parse error:', error);
+                }
+            }
+
+            showUI(data) {
+                document.getElementById('stats').style.display = 'block';
+                document.getElementById('totalFrames').textContent = data.frameCount;
+                document.getElementById('totalBones').textContent = data.boneCount;
+                document.getElementById('frameSlider').max = data.frameCount;
+            }
+
+            updateFrameSelect(count) {
+                const select = document.getElementById('frameSelect');
+                select.innerHTML = '';
+                for (let i = 1; i <= count; i++) {
+                    const option = document.createElement('option');
+                    option.value = i;
+                    option.textContent = `Frame ${i}`;
+                    select.appendChild(option);
+                }
+            }
+
+            updateBoneSelect(boneIds) {
+                const select = document.getElementById('boneSelect');
+                select.innerHTML = '<option value="all">ALL BONES</option>';
+                boneIds.forEach(id => {
+                    const option = document.createElement('option');
+                    option.value = id;
+                    option.textContent = `Bone ${id}`;
+                    select.appendChild(option);
+                });
+            }
+
+            changeFrame(frameNum) {
+                this.currentFrame = frameNum;
+                document.getElementById('currentFrameNum').textContent = frameNum;
+                document.getElementById('frameSlider').value = frameNum;
+                this.displayFrame(frameNum);
+            }
+
+            filterBones(boneId) {
+                this.parser.currentBoneFilter = boneId;
+                this.displayFrame(this.currentFrame);
+            }
+
+            displayFrame(frameNum) {
+                const frame = this.parser.frames[frameNum - 1];
+                if (!frame) return;
+
+                const boneList = document.getElementById('boneList');
+                boneList.innerHTML = '';
+
+                const rawData = document.getElementById('rawData');
+                rawData.innerHTML = '';
+
+                const boneFilter = this.parser.currentBoneFilter;
+                const bonesToShow = boneFilter === 'all' 
+                    ? frame.bones 
+                    : frame.bones.filter(b => b.boneId.toString() === boneFilter);
+
+                // Display bone transforms
+                bonesToShow.forEach((bone, idx) => {
+                    const boneItem = document.createElement('div');
+                    boneItem.className = 'bone-item';
+                    boneItem.innerHTML = `
+                        <div class="bone-header">
+                            <span class="bone-id">BONE ${bone.boneId}</span>
+                            <span class="bone-index">#${idx + 1}</span>
+                        </div>
+                        <div class="transform-grid">
+                            <div class="transform-box">
+                                <div class="transform-label">POSITION</div>
+                                <div class="transform-values">
+                                    X: ${bone.position[0].toFixed(6)}<br>
+                                    Y: ${bone.position[1].toFixed(6)}<br>
+                                    Z: ${bone.position[2].toFixed(6)}
+                                </div>
+                            </div>
+                            <div class="transform-box">
+                                <div class="transform-label">ROTATION</div>
+                                <div class="transform-values">
+                                    X: ${bone.rotation[0].toFixed(6)}<br>
+                                    Y: ${bone.rotation[1].toFixed(6)}<br>
+                                    Z: ${bone.rotation[2].toFixed(6)}<br>
+                                    W: ${bone.rotation[3].toFixed(6)}
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                    boneList.appendChild(boneItem);
+                });
+
+                // Display raw hex data for first bone
+                if (bonesToShow.length > 0) {
+                    const firstBone = bonesToShow[0];
+                    const hexGrid = document.createElement('div');
+                    hexGrid.className = 'hex-grid';
+                    
+                    ['px', 'py', 'pz', 'v0', 'v1', 'v2'].forEach(key => {
+                        const hexItem = document.createElement('div');
+                        hexItem.className = 'hex-item';
+                        hexItem.innerHTML = `
+                            <div class="hex-label">${key.toUpperCase()}</div>
+                            <div class="hex-value">0x${firstBone.raw[key].toString(16).padStart(4, '0')}</div>
+                        `;
+                        hexGrid.appendChild(hexItem);
+                    });
+                    
+                    rawData.appendChild(hexGrid);
+                    
+                    // Add binary breakdown
+                    const breakdown = document.createElement('div');
+                    breakdown.style.marginTop = '20px';
+                    breakdown.innerHTML = `
+                        <div style="color: #55aaff; margin-bottom: 10px;">QUATERNION BREAKDOWN:</div>
+                        <div style="color: #e0e0ff; font-size: 0.9em; line-height: 1.5;">
+                            v0: 0x${firstBone.raw.v0.toString(2).padStart(16, '0').replace(/(.{4})/g, '$1 ')}<br>
+                            v1: 0x${firstBone.raw.v1.toString(2).padStart(16, '0').replace(/(.{4})/g, '$1 ')}<br>
+                            v2: 0x${firstBone.raw.v2.toString(2).padStart(16, '0').replace(/(.{4})/g, '$1 ')}
+                        </div>
+                    `;
+                    rawData.appendChild(breakdown);
+                }
+            }
+
+            exportCSV() {
+                if (!this.parser.frames.length) {
+                    this.showMessage('warning', 'No data to export');
+                    return;
+                }
+
+                const csvRows = ['frame,bone_id,pos_x,pos_y,pos_z,rot_x,rot_y,rot_z,rot_w'];
+                
+                this.parser.frames.forEach(frame => {
+                    frame.bones.forEach(bone => {
                         const row = [
+                            frame.index,
                             bone.boneId,
-                            frameNumber,
                             bone.position[0].toFixed(6),
                             bone.position[1].toFixed(6),
                             bone.position[2].toFixed(6),
@@ -711,375 +734,26 @@
                             bone.rotation[3].toFixed(6)
                         ];
                         csvRows.push(row.join(','));
-                    }
-                }
-                
-                return csvRows.join('\n');
-            }
-
-            getCurrentFrameCSV() {
-                const frame = this.getCurrentFrame();
-                if (!frame) return '';
-                
-                const csvRows = ['bone_id,frame_number,position_x,position_y,position_z,rotation_x,rotation_y,rotation_z,rotation_w'];
-                
-                for (const bone of frame.bones) {
-                    const row = [
-                        bone.boneId,
-                        this.currentFrame,
-                        bone.position[0].toFixed(6),
-                        bone.position[1].toFixed(6),
-                        bone.position[2].toFixed(6),
-                        bone.rotation[0].toFixed(6),
-                        bone.rotation[1].toFixed(6),
-                        bone.rotation[2].toFixed(6),
-                        bone.rotation[3].toFixed(6)
-                    ];
-                    csvRows.push(row.join(','));
-                }
-                
-                return csvRows.join('\n');
-            }
-
-            getAllAnimationDataJSON() {
-                if (!this.animationData) return null;
-                
-                const result = {
-                    metadata: {
-                        totalFrames: this.animationData.framesCount,
-                        totalBones: this.animationData.bonesCount,
-                        boneIds: this.animationData.boneIds
-                    },
-                    frames: this.animationData.frames.map((frame, frameIndex) => ({
-                        frameNumber: frameIndex + 1,
-                        bones: frame.bones.map(bone => ({
-                            boneId: bone.boneId,
-                            position: {
-                                x: bone.position[0],
-                                y: bone.position[1],
-                                z: bone.position[2]
-                            },
-                            rotation: {
-                                x: bone.rotation[0],
-                                y: bone.rotation[1],
-                                z: bone.rotation[2],
-                                w: bone.rotation[3]
-                            },
-                            rawData: bone.rawData
-                        }))
-                    }))
-                };
-                
-                return JSON.stringify(result, null, 2);
-            }
-
-            getCurrentFrameJSON() {
-                const frame = this.getCurrentFrame();
-                if (!frame) return null;
-                
-                const result = {
-                    frameNumber: this.currentFrame,
-                    bones: frame.bones.map(bone => ({
-                        boneId: bone.boneId,
-                        position: {
-                            x: bone.position[0],
-                            y: bone.position[1],
-                            z: bone.position[2]
-                        },
-                        rotation: {
-                            x: bone.rotation[0],
-                            y: bone.rotation[1],
-                            z: bone.rotation[2],
-                            w: bone.rotation[3]
-                        },
-                        rawData: bone.rawData
-                    }))
-                };
-                
-                return JSON.stringify(result, null, 2);
-            }
-        }
-
-        class AnimationViewer {
-            constructor() {
-                this.parser = new AnimationParser();
-                this.initEventListeners();
-            }
-
-            initEventListeners() {
-                const fileInput = document.getElementById('fileInput');
-                const parseButton = document.getElementById('parseButton');
-                const exportButton = document.getElementById('exportButton');
-                const exportAllButton = document.getElementById('exportAllButton');
-                const frameSelector = document.getElementById('frameSelector');
-                const boneSelector = document.getElementById('boneSelector');
-                const formatSelect = document.getElementById('formatSelect');
-
-                fileInput.addEventListener('change', (e) => {
-                    const file = e.target.files[0];
-                    if (file) {
-                        document.getElementById('selectedFileName').textContent = `Selected: ${file.name} (${(file.size/1024).toFixed(2)} KB)`;
-                        document.getElementById('selectedFileName').classList.add('show');
-                        parseButton.disabled = false;
-                    }
+                    });
                 });
 
-                parseButton.addEventListener('click', () => this.loadAnimation());
-                exportButton.addEventListener('click', () => this.exportCurrentFrame());
-                exportAllButton.addEventListener('click', () => this.exportAllFrames());
-                frameSelector.addEventListener('change', (e) => this.onFrameChange(e.target.value));
-                boneSelector.addEventListener('change', (e) => this.onBoneFilterChange(e.target.value));
-                formatSelect.addEventListener('change', () => this.updateExportButtons());
-            }
-
-            async loadAnimation() {
-                const fileInput = document.getElementById('fileInput');
-                const file = fileInput.files[0];
-                
-                if (!file) {
-                    this.showError('Please select a file first');
-                    return;
-                }
-
-                this.showLoading(true);
-                this.hideMessages();
-
-                try {
-                    console.log(`Loading file: ${file.name}, size: ${file.size} bytes`);
-                    const arrayBuffer = await file.arrayBuffer();
-                    console.log(`ArrayBuffer size: ${arrayBuffer.byteLength} bytes`);
-                    
-                    const animationData = await this.parser.parseAnimationData(arrayBuffer);
-                    
-                    console.log('Animation data parsed successfully:', animationData);
-                    
-                    this.showAnimationData(animationData);
-                    this.populateControls(animationData);
-                    this.displayFrame(1);
-                    
-                    this.showSuccess(`Animation loaded successfully! ${animationData.framesCount} frames, ${animationData.bonesCount} bones`);
-                    
-                } catch (error) {
-                    this.showError(`Error loading animation: ${error.message}`);
-                    console.error('Error details:', error);
-                } finally {
-                    this.showLoading(false);
-                }
-            }
-
-            showAnimationData(animationData) {
-                document.getElementById('totalFrames').textContent = animationData.framesCount;
-                document.getElementById('totalBones').textContent = animationData.bonesCount;
-                document.getElementById('currentFrame').textContent = this.parser.currentFrame;
-
-                document.getElementById('stats').style.display = 'grid';
-                document.getElementById('controls').style.display = 'flex';
-                document.getElementById('frameData').style.display = 'block';
-                document.getElementById('exportOptions').style.display = 'flex';
-                
-                document.getElementById('exportButton').disabled = false;
-                document.getElementById('exportAllButton').disabled = false;
-            }
-
-            populateControls(animationData) {
-                const frameSelector = document.getElementById('frameSelector');
-                const boneSelector = document.getElementById('boneSelector');
-                
-                frameSelector.innerHTML = '';
-                boneSelector.innerHTML = '<option value="all">All Bones</option>';
-                
-                for (let i = 1; i <= animationData.framesCount; i++) {
-                    const option = document.createElement('option');
-                    option.value = i;
-                    option.textContent = `Frame ${i}`;
-                    frameSelector.appendChild(option);
-                }
-                
-                animationData.boneIds.forEach(boneId => {
-                    const option = document.createElement('option');
-                    option.value = boneId;
-                    option.textContent = `Bone ${boneId}`;
-                    boneSelector.appendChild(option);
-                });
-                
-                frameSelector.value = '1';
-                boneSelector.value = 'all';
-            }
-
-            onFrameChange(frameNumber) {
-                const frameNum = parseInt(frameNumber);
-                if (this.parser.setFrame(frameNum)) {
-                    document.getElementById('currentFrame').textContent = frameNum;
-                    this.displayFrame(frameNum);
-                }
-            }
-
-            onBoneFilterChange(boneId) {
-                this.parser.setBoneFilter(boneId);
-                this.displayFrame(this.parser.currentFrame);
-            }
-
-            displayFrame(frameNumber) {
-                const frame = this.parser.getFrameData(frameNumber);
-                if (!frame) return;
-
-                const boneList = document.getElementById('boneList');
-                boneList.innerHTML = '';
-
-                const bones = this.parser.getFilteredBones();
-                
-                if (bones.length === 0) {
-                    boneList.innerHTML = '<div class="bone-card"><div class="bone-id">No bones found</div></div>';
-                    return;
-                }
-
-                bones.forEach(bone => {
-                    const boneCard = document.createElement('div');
-                    boneCard.className = 'bone-card';
-                    
-                    boneCard.innerHTML = `
-                        <div class="bone-id">Bone ID: ${bone.boneId}</div>
-                        <div class="transform-data">
-                            <div class="position-data">
-                                <div class="data-label">Position</div>
-                                <div class="data-value">
-                                    X: ${bone.position[0].toFixed(6)}<br>
-                                    Y: ${bone.position[1].toFixed(6)}<br>
-                                    Z: ${bone.position[2].toFixed(6)}
-                                </div>
-                                <div style="margin-top: 10px; font-size: 0.9em; color: #888;">
-                                    Raw: 0x${bone.rawData.px.toString(16).padStart(4, '0')} 0x${bone.rawData.py.toString(16).padStart(4, '0')} 0x${bone.rawData.pz.toString(16).padStart(4, '0')}
-                                </div>
-                            </div>
-                            <div class="rotation-data">
-                                <div class="data-label">Rotation (Quaternion)</div>
-                                <div class="data-value">
-                                    X: ${bone.rotation[0].toFixed(6)}<br>
-                                    Y: ${bone.rotation[1].toFixed(6)}<br>
-                                    Z: ${bone.rotation[2].toFixed(6)}<br>
-                                    W: ${bone.rotation[3].toFixed(6)}
-                                </div>
-                                <div style="margin-top: 10px; font-size: 0.9em; color: #888;">
-                                    Raw: 0x${bone.rawData.v0_hex} 0x${bone.rawData.v1_hex} 0x${bone.rawData.v2_hex}
-                                </div>
-                            </div>
-                        </div>
-                    `;
-                    
-                    boneList.appendChild(boneCard);
-                });
-            }
-
-            exportCurrentFrame() {
-                if (!this.parser.animationData) {
-                    this.showError('No animation data loaded');
-                    return;
-                }
-
-                const format = document.getElementById('formatSelect').value;
-                let data, filename, mimeType;
-
-                if (format === 'csv') {
-                    data = this.parser.getCurrentFrameCSV();
-                    filename = `sf3_animation_frame_${this.parser.currentFrame}.csv`;
-                    mimeType = 'text/csv';
-                } else {
-                    data = this.parser.getCurrentFrameJSON();
-                    filename = `sf3_animation_frame_${this.parser.currentFrame}.json`;
-                    mimeType = 'application/json';
-                }
-
-                if (!data) {
-                    this.showError('Could not generate export data');
-                    return;
-                }
-
-                this.downloadFile(data, filename, mimeType);
-                this.showSuccess(`Exported frame ${this.parser.currentFrame} as ${format.toUpperCase()}`);
-            }
-
-            exportAllFrames() {
-                if (!this.parser.animationData) {
-                    this.showError('No animation data loaded');
-                    return;
-                }
-
-                const format = document.getElementById('formatSelect').value;
-                let data, filename, mimeType;
-
-                if (format === 'csv') {
-                    data = this.parser.getAllAnimationDataCSV();
-                    filename = `sf3_animation_all_frames.csv`;
-                    mimeType = 'text/csv';
-                } else {
-                    data = this.parser.getAllAnimationDataJSON();
-                    filename = `sf3_animation_all_frames.json`;
-                    mimeType = 'application/json';
-                }
-
-                if (!data) {
-                    this.showError('Could not generate export data');
-                    return;
-                }
-
-                this.downloadFile(data, filename, mimeType);
-                this.showSuccess(`Exported all frames (${this.parser.animationData.framesCount}) as ${format.toUpperCase()}`);
-            }
-
-            downloadFile(data, filename, mimeType) {
-                const blob = new Blob([data], { type: mimeType });
+                const csvContent = csvRows.join('\n');
+                const blob = new Blob([csvContent], { type: 'text/csv' });
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = url;
-                a.download = filename;
+                a.download = `sf3_animation_${Date.now()}.csv`;
                 document.body.appendChild(a);
                 a.click();
                 document.body.removeChild(a);
                 URL.revokeObjectURL(url);
-            }
 
-            updateExportButtons() {
-                const format = document.getElementById('formatSelect').value;
-                const exportButton = document.getElementById('exportButton');
-                const exportAllButton = document.getElementById('exportAllButton');
-                
-                if (format === 'csv') {
-                    exportButton.textContent = 'Export Current Frame (CSV)';
-                    exportAllButton.textContent = 'Export All Frames (CSV)';
-                } else {
-                    exportButton.textContent = 'Export Current Frame (JSON)';
-                    exportAllButton.textContent = 'Export All Frames (JSON)';
-                }
-            }
-
-            showLoading(show) {
-                document.getElementById('loading').classList.toggle('show', show);
-            }
-
-            showError(message) {
-                const errorDiv = document.getElementById('errorMessage');
-                errorDiv.textContent = message;
-                errorDiv.classList.add('show');
-            }
-
-            showSuccess(message) {
-                const successDiv = document.getElementById('successMessage');
-                successDiv.textContent = message;
-                successDiv.classList.add('show');
-                setTimeout(() => successDiv.classList.remove('show'), 3000);
-            }
-
-            hideMessages() {
-                document.getElementById('errorMessage').classList.remove('show');
-                document.getElementById('successMessage').classList.remove('show');
+                this.showMessage('success', 'CSV exported successfully');
             }
         }
 
-        // Initialize the viewer when page loads
-        document.addEventListener('DOMContentLoaded', () => {
-            const viewer = new AnimationViewer();
-            console.log('SF3 Animation Viewer initialized');
-        });
+        // Initialize viewer
+        const viewer = new Viewer();
     </script>
 </body>
 </html>
