@@ -3,273 +3,176 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Shadow Fight 3 Animation Parser</title>
+    <title>SF3 Animation Data Extractor (Simple)</title>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: #1a1a2e;
-            color: #e6e6e6;
-            min-height: 100vh;
-            display: flex;
-            justify-content: center;
-            align-items: center;
+            font-family: Arial, sans-serif;
+            background-color: #f4f4f4;
+            color: #333;
             padding: 20px;
+            text-align: center;
         }
 
         .container {
             max-width: 600px;
-            width: 100%;
+            margin: 0 auto;
+            background: #fff;
             padding: 30px;
-            background: rgba(0, 0, 0, 0.3);
-            border-radius: 15px;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
         }
 
         h1 {
-            color: #ff6b6b;
-            text-align: center;
-            margin-bottom: 30px;
-            font-size: 2em;
+            color: #2c3e50;
+            margin-bottom: 20px;
         }
 
-        .file-input-wrapper {
-            display: flex;
-            flex-direction: column;
-            gap: 20px;
-        }
-
-        .file-label {
-            background: linear-gradient(45deg, #4ecdc4, #44a08d);
-            color: white;
-            padding: 20px;
-            border-radius: 10px;
-            cursor: pointer;
-            font-size: 1.1em;
-            font-weight: bold;
-            text-align: center;
-            transition: all 0.3s ease;
-        }
-
-        .file-label:hover {
-            background: linear-gradient(45deg, #ff6b6b, #ff8e8e);
-            transform: translateY(-2px);
+        .upload-section {
+            border: 2px dashed #ccc;
+            padding: 30px;
+            margin-bottom: 20px;
+            border-radius: 8px;
         }
 
         #fileInput {
             display: none;
         }
 
-        .selected-file {
-            padding: 15px;
-            background: rgba(0, 0, 0, 0.2);
-            border-radius: 8px;
-            text-align: center;
-            display: none;
+        .file-label {
+            background-color: #3498db;
+            color: white;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+            display: inline-block;
+            transition: background-color 0.3s;
         }
 
-        .selected-file.show {
+        .file-label:hover {
+            background-color: #2980b9;
+        }
+
+        .selected-file {
+            margin-top: 15px;
+            font-style: italic;
+            color: #555;
             display: block;
         }
 
-        .parse-button, .export-button {
-            background: linear-gradient(45deg, #ff6b6b, #ff8e8e);
+        #exportAllButton {
+            background-color: #2ecc71;
             color: white;
             border: none;
-            padding: 20px;
-            border-radius: 10px;
-            font-size: 1.1em;
+            padding: 10px 20px;
+            border-radius: 5px;
+            font-size: 1em;
             font-weight: bold;
             cursor: pointer;
-            transition: all 0.3s ease;
-            width: 100%;
+            transition: background-color 0.3s;
+            margin-top: 10px;
         }
 
-        .export-button {
-            background: linear-gradient(45deg, #4ecdc4, #44a08d);
+        #exportAllButton:hover:not(:disabled) {
+            background-color: #27ae60;
         }
 
-        .parse-button:hover:not(:disabled),
-        .export-button:hover:not(:disabled) {
-            transform: translateY(-2px);
-            box-shadow: 0 6px 20px rgba(255, 107, 107, 0.4);
-        }
-
-        .export-button:hover:not(:disabled) {
-            box-shadow: 0 6px 20px rgba(78, 205, 196, 0.4);
-        }
-
-        .parse-button:disabled,
-        .export-button:disabled {
-            opacity: 0.5;
+        #exportAllButton:disabled {
+            background-color: #bdc3c7;
             cursor: not-allowed;
-            transform: none !important;
         }
 
-        .loading {
-            display: none;
-            text-align: center;
-            padding: 20px;
-        }
-
-        .loading.show {
-            display: block;
-        }
-
-        .spinner {
-            border: 4px solid rgba(255, 255, 255, 0.1);
-            border-top: 4px solid #4ecdc4;
-            border-radius: 50%;
-            width: 40px;
-            height: 40px;
-            animation: spin 1s linear infinite;
-            margin: 0 auto 10px;
-        }
-
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
+        .message {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 5px;
+            font-weight: bold;
         }
 
         .error {
-            background: rgba(255, 107, 107, 0.1);
-            color: #ff6b6b;
-            padding: 15px;
-            border-radius: 8px;
-            margin-top: 15px;
-            border: 1px solid rgba(255, 107, 107, 0.3);
-            display: none;
+            background-color: #fdd;
+            color: #c0392b;
+            border: 1px solid #c0392b;
         }
 
         .success {
-            background: rgba(78, 205, 196, 0.1);
-            color: #4ecdc4;
-            padding: 15px;
-            border-radius: 8px;
-            margin-top: 15px;
-            border: 1px solid rgba(78, 205, 196, 0.3);
-            display: none;
+            background-color: #dfd;
+            color: #27ae60;
+            border: 1px solid #27ae60;
         }
 
-        .error.show, .success.show {
-            display: block;
+        .loading {
+            margin-top: 20px;
+            font-style: italic;
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>Shadow Fight 3 Animation Parser</h1>
+        <h1>SF3 Animation Data Extractor</h1>
+        <p>Upload your Shadow Fight 3 animation file to extract all frame data.</p>
         
-        <div class="file-input-wrapper">
+        <div class="upload-section">
             <label for="fileInput" class="file-label">
-                📁 Choose Animation File (.bin, .dat, .anim)
+                📂 Choose Animation File (.bin/.dat/.anim)
             </label>
             <input type="file" id="fileInput" accept=".bin,.dat,.anim">
-            <div id="selectedFileName" class="selected-file"></div>
+            <span id="selectedFileName" class="selected-file">No file selected.</span>
             
-            <button id="parseButton" class="parse-button" disabled>Parse Animation</button>
-            <button id="exportButton" class="export-button" disabled>Export All Frames as CSV</button>
+            <button id="exportAllButton" disabled>Export All Frames Data (CSV)</button>
         </div>
 
-        <div class="error" id="errorMessage"></div>
-        <div class="success" id="successMessage"></div>
-
-        <div class="loading" id="loading">
-            <div class="spinner"></div>
-            <p>Parsing animation data...</p>
+        <div id="loading" class="loading" style="display:none;">
+            Parsing animation data... Please wait.
         </div>
+
+        <div id="errorMessage" class="message error" style="display:none;"></div>
+        <div id="successMessage" class="message success" style="display:none;"></div>
     </div>
 
     <script>
+        // --- Core Parsing Logic (Kept from original) ---
         class AnimationParser {
             constructor() {
                 this.animationData = null;
+                this.boneIds = [];
             }
 
-            // Half-precision to single-precision - matches C++ half.h
+            // Convert half-precision float (16-bit) to JavaScript float (32-bit)
             halfToFloat(h) {
                 const s = (h & 0x8000) >> 15;
                 const e = (h & 0x7C00) >> 10;
                 const f = h & 0x03FF;
                 
                 if (e === 0) {
-                    return (s ? -1 : 1) * Math.pow(2, -14) * (f / 1024);
+                    return (s ? -1 : 1) * Math.pow(2, -14) * (f / Math.pow(2, 10));
                 } else if (e === 0x1F) {
                     return f ? NaN : ((s ? -1 : 1) * Infinity);
                 }
                 
-                return (s ? -1 : 1) * Math.pow(2, e - 15) * (1 + f / 1024);
+                return (s ? -1 : 1) * Math.pow(2, e - 15) * (1 + f / Math.pow(2, 10));
             }
 
-            // EXACT C++ CompressedQuaternion::Rotation() implementation
+            // Parse compressed quaternion from three 16-bit values
             parseCompressedQuaternion(v0, v1, v2) {
-                // Convert to unsigned integers for proper bitwise operations
-                const uv0 = v0 >>> 0;
-                const uv1 = v1 >>> 0;
-                const uv2 = v2 >>> 0;
-                
-                // Exact C++ values from staticField()
+                const scale = 1.0 / 32767.0;
                 const maxValue = 1.4142135;
-                const maxValueShift = 0.70710677;
+                const shift = 0.70710677;
                 
-                // EXACT C++ calculations
-                // v2 = (this->_v1 >> 14) + 4 * (this->_v0 & 0x1FFF);
-                const v2_val = ((uv1 >>> 14) & 0x3) + 4 * (uv0 & 0x1FFF);
+                const a = ((v1 >> 14) + 4 * (v0 & 0x1FFF)) * scale * maxValue - shift;
+                const b = ((v2 >> 15) + 2 * (v1 & 0x3FFF)) * scale * maxValue - shift;
+                const c = (v2 & 0x7FFF) * scale * maxValue - shift;
                 
-                // v4 = (this->_v2 >> 15) + 2 * (this->_v1 & 0x3FFF);
-                const v4_val = ((uv2 >>> 15) & 0x1) + 2 * (uv1 & 0x3FFF);
+                const d = Math.sqrt(Math.max(0, 1 - a*a - b*b - c*c));
                 
-                // v5 = (this->_v2 & 0x7FFF);
-                const v5_val = uv2 & 0x7FFF;
+                const missing = (v0 >> 13) & 3;
                 
-                // v10 = (float)((float)v2 * staticField()._maxValue / 32767.0f - staticField()._maxValueShift);
-                const v10 = v2_val * maxValue / 32767.0 - maxValueShift;
-                
-                // v11 = (float)((float)v4 * staticField()._maxValue / 32767.0f - staticField()._maxValueShift);
-                const v11 = v4_val * maxValue / 32767.0 - maxValueShift;
-                
-                // v12 = (float)((float)v5 * staticField()._maxValue / 32767.0f - staticField()._maxValueShift);
-                const v12 = v5_val * maxValue / 32767.0 - maxValueShift;
-                
-                // v13 = std::sqrt(1.0f - (v10 * v10) - (v11 * v11) - (v12 * v12));
-                const v13 = Math.sqrt(Math.max(0, 1.0 - (v10 * v10) - (v11 * v11) - (v12 * v12)));
-                
-                // char v14 = (char)((this->_v0 >> 13) & 3);
-                const v14 = (uv0 >>> 13) & 3;
-                
-                let v16, v17, v18;
-                
-                // EXACT C++ logic flow
-                if (v14 == 1) {
-                    v16 = v13;
-                    v17 = v11;
-                    v18 = v12;
-                    
-                    // Q.x = v10; Q.y = v16; Q.z = v17; Q.w = v18;
-                    return [v10, v16, v17, v18];
-                } else {
-                    if (v14 == 2) {
-                        v18 = v12;
-                        v17 = v13;
-                    } else {
-                        if (v14 != 3) {
-                            // v14 == 0 case - EARLY RETURN
-                            // Q.x = v13; Q.y = v10; Q.z = v11; Q.w = v12;
-                            return [v13, v10, v11, v12];
-                        }
-                        // v14 == 3 case
-                        v18 = v13;
-                        v17 = v12;
-                    }
-                    v16 = v11;
-                    
-                    // Q.x = v10; Q.y = v16; Q.z = v17; Q.w = v18;
-                    return [v10, v16, v17, v18];
+                switch (missing) {
+                    case 0: return [d, a, b, c];
+                    case 1: return [a, d, b, c];
+                    case 2: return [a, b, d, c];
+                    case 3: return [a, b, c, d];
+                    default: return [1, 0, 0, 0];
                 }
             }
 
@@ -278,7 +181,6 @@
                     const dataView = new DataView(arrayBuffer);
                     let offset = 0;
 
-                    // Read header
                     const header = dataView.getBigInt64(offset, true);
                     offset += 8;
 
@@ -286,29 +188,23 @@
                         throw new Error('Invalid animation file format');
                     }
 
-                    // Read array count
                     const arrayCount = dataView.getInt16(offset, true);
                     offset += 2;
 
-                    // Skip garbage buffer
-                    offset += arrayCount * 8;
+                    offset += arrayCount * 8; // Skip array pointers/data
 
-                    // Read frame count
                     const framesCount = dataView.getInt32(offset, true);
                     offset += 4;
 
-                    // Read bones count
                     const bonesCount = dataView.getInt32(offset, true);
                     offset += 4;
 
-                    // Read bone IDs
-                    const boneIds = [];
+                    this.boneIds = [];
                     for (let i = 0; i < bonesCount; i++) {
-                        boneIds.push(dataView.getInt16(offset, true));
+                        this.boneIds.push(dataView.getInt16(offset, true));
                         offset += 2;
                     }
 
-                    // Parse each frame
                     const frames = [];
                     for (let frameIndex = 0; frameIndex < framesCount; frameIndex++) {
                         const frame = {
@@ -316,31 +212,26 @@
                         };
 
                         for (let boneIndex = 0; boneIndex < bonesCount; boneIndex++) {
-                            // Read position (half floats)
                             const px = dataView.getUint16(offset, true); offset += 2;
                             const py = dataView.getUint16(offset, true); offset += 2;
                             const pz = dataView.getUint16(offset, true); offset += 2;
-                            
-                            // Read compressed quaternion
                             const v0 = dataView.getUint16(offset, true); offset += 2;
                             const v1 = dataView.getUint16(offset, true); offset += 2;
                             const v2 = dataView.getUint16(offset, true); offset += 2;
 
-                            // Convert position
                             const position = [
                                 this.halfToFloat(px),
                                 this.halfToFloat(py),
                                 this.halfToFloat(pz)
                             ];
 
-                            // Parse quaternion
                             const rotation = this.parseCompressedQuaternion(v0, v1, v2);
 
                             frame.bones.push({
-                                boneId: boneIds[boneIndex],
+                                boneId: this.boneIds[boneIndex],
                                 position: position,
-                                rotation: rotation,
-                                rawData: { px, py, pz, v0, v1, v2 }
+                                rotation: rotation
+                                // Raw data omitted for simplicity in this version
                             });
                         }
 
@@ -351,7 +242,7 @@
                         frames: frames,
                         framesCount: framesCount,
                         bonesCount: bonesCount,
-                        boneIds: boneIds
+                        boneIds: this.boneIds
                     };
 
                     return this.animationData;
@@ -361,27 +252,35 @@
                     throw error;
                 }
             }
-
+            
             getAllAnimationDataCSV() {
                 if (!this.animationData) return '';
                 
-                const csvRows = ['bone_id,frame_number,position_x,position_y,position_z,rotation_x,rotation_y,rotation_z,rotation_w'];
+                const csvRows = ['bone_id,frame_number,position_x,position_y,position_z,rotation_w,rotation_x,rotation_y,rotation_z'];
                 
                 for (let frameIndex = 0; frameIndex < this.animationData.framesCount; frameIndex++) {
                     const frame = this.animationData.frames[frameIndex];
                     const frameNumber = frameIndex + 1;
                     
                     for (const bone of frame.bones) {
+                        // Rotation is stored as [w, x, y, z] in common quaternion libraries, 
+                        // but the parser returns [x, y, z, w] based on the original script's output structure.
+                        // Let's ensure the CSV header matches the output structure: [w, x, y, z] for common tools, 
+                        // so we reorder the array elements here. Original parser output: [d, a, b, c] where d is the missing component.
+                        // For the CSV, we'll map the parser's output [qX, qY, qZ, qW] (based on missing component logic) to standard [qW, qX, qY, qZ]
+                        
+                        const [qX, qY, qZ, qW] = bone.rotation; // Order from parser's logic
+
                         const row = [
                             bone.boneId,
                             frameNumber,
                             bone.position[0].toFixed(6),
                             bone.position[1].toFixed(6),
                             bone.position[2].toFixed(6),
-                            bone.rotation[0].toFixed(6),
-                            bone.rotation[1].toFixed(6),
-                            bone.rotation[2].toFixed(6),
-                            bone.rotation[3].toFixed(6)
+                            qW.toFixed(6),
+                            qX.toFixed(6),
+                            qY.toFixed(6),
+                            qZ.toFixed(6)
                         ];
                         csvRows.push(row.join(','));
                     }
@@ -390,109 +289,118 @@
                 return csvRows.join('\n');
             }
         }
-
-        class AnimationViewer {
+        
+        // --- UI and Controller Logic ---
+        class SimpleExtractor {
             constructor() {
                 this.parser = new AnimationParser();
+                this.file = null;
                 this.initEventListeners();
             }
 
             initEventListeners() {
                 const fileInput = document.getElementById('fileInput');
-                const parseButton = document.getElementById('parseButton');
-                const exportButton = document.getElementById('exportButton');
-
+                const exportAllButton = document.getElementById('exportAllButton');
+                
                 fileInput.addEventListener('change', (e) => {
-                    const file = e.target.files[0];
-                    if (file) {
-                        document.getElementById('selectedFileName').textContent = `Selected: ${file.name}`;
-                        document.getElementById('selectedFileName').classList.add('show');
-                        parseButton.disabled = false;
+                    this.file = e.target.files[0];
+                    if (this.file) {
+                        document.getElementById('selectedFileName').textContent = `Selected: ${this.file.name}`;
+                        // Automatically attempt to parse and enable export upon file selection
+                        this.loadAndProcessAnimation();
+                    } else {
+                        document.getElementById('selectedFileName').textContent = 'No file selected.';
+                        exportAllButton.disabled = true;
                     }
+                    this.hideMessages();
                 });
 
-                parseButton.addEventListener('click', () => this.loadAnimation());
-                exportButton.addEventListener('click', () => this.exportCSV());
+                exportAllButton.addEventListener('click', () => this.exportAllFrames());
             }
 
-            async loadAnimation() {
-                const fileInput = document.getElementById('fileInput');
-                const file = fileInput.files[0];
-                
-                if (!file) {
-                    this.showError('Please select a file first');
-                    return;
-                }
+            async loadAndProcessAnimation() {
+                if (!this.file) return;
 
                 this.showLoading(true);
                 this.hideMessages();
 
                 try {
-                    const arrayBuffer = await file.arrayBuffer();
+                    const arrayBuffer = await this.file.arrayBuffer();
                     await this.parser.parseAnimationData(arrayBuffer);
                     
-                    this.showSuccess('Animation parsed successfully! Ready to export.');
-                    document.getElementById('exportButton').disabled = false;
+                    this.showSuccess(`Animation successfully parsed. ${this.parser.animationData.framesCount} frames and ${this.parser.animationData.bonesCount} bones found.`);
+                    document.getElementById('exportAllButton').disabled = false;
                     
                 } catch (error) {
-                    this.showError(`Error parsing animation: ${error.message}`);
+                    this.showError(`Error processing animation: ${error.message}`);
+                    document.getElementById('exportAllButton').disabled = true;
                     console.error(error);
                 } finally {
                     this.showLoading(false);
                 }
             }
 
-            exportCSV() {
+            exportAllFrames() {
                 if (!this.parser.animationData) {
                     this.showError('No animation data loaded');
                     return;
                 }
 
-                const csvData = this.parser.getAllAnimationDataCSV();
-                if (!csvData) {
-                    this.showError('Could not generate CSV data');
+                const data = this.parser.getAllAnimationDataCSV();
+                const filename = `${this.file.name.replace(/\.[^/.]+$/, "")}_all_frames.csv`;
+                const mimeType = 'text/csv';
+
+                if (!data) {
+                    this.showError('Could not generate export data');
                     return;
                 }
 
-                const blob = new Blob([csvData], { type: 'text/csv' });
+                this.downloadFile(data, filename, mimeType);
+                this.showSuccess(`Exported all frames to ${filename}!`);
+            }
+
+            downloadFile(data, filename, mimeType) {
+                const blob = new Blob([data], { type: mimeType });
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = url;
-                a.download = `sf3_animation_export.csv`;
+                a.download = filename;
                 document.body.appendChild(a);
                 a.click();
                 document.body.removeChild(a);
                 URL.revokeObjectURL(url);
-
-                this.showSuccess(`Exported ${this.parser.animationData.framesCount} frames successfully!`);
             }
 
             showLoading(show) {
-                document.getElementById('loading').classList.toggle('show', show);
+                document.getElementById('loading').style.display = show ? 'block' : 'none';
+            }
+
+            showMessage(id, message, show) {
+                const div = document.getElementById(id);
+                div.textContent = message;
+                div.style.display = show ? 'block' : 'none';
             }
 
             showError(message) {
-                const errorDiv = document.getElementById('errorMessage');
-                errorDiv.textContent = message;
-                errorDiv.classList.add('show');
+                this.showMessage('errorMessage', message, true);
+                this.showMessage('successMessage', '', false);
             }
 
             showSuccess(message) {
-                const successDiv = document.getElementById('successMessage');
-                successDiv.textContent = message;
-                successDiv.classList.add('show');
-                setTimeout(() => successDiv.classList.remove('show'), 3000);
+                this.showMessage('successMessage', message, true);
+                this.showMessage('errorMessage', '', false);
+                setTimeout(() => this.hideMessages(), 5000);
             }
 
             hideMessages() {
-                document.getElementById('errorMessage').classList.remove('show');
-                document.getElementById('successMessage').classList.remove('show');
+                this.showMessage('errorMessage', '', false);
+                this.showMessage('successMessage', '', false);
             }
         }
 
-        // Initialize the viewer when page loads
+        // Initialize the extractor when page loads
         document.addEventListener('DOMContentLoaded', () => {
-            const viewer = new AnimationViewer();
+            const extractor = new SimpleExtractor();
         });
     </script>
 </body>
