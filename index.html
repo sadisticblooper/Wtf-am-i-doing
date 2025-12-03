@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SF3 Animation Data Diddler (XYZW Rotation)</title>
+    <title>SF3 Animation Data Diddler</title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -12,7 +12,6 @@
             padding: 20px;
             text-align: center;
         }
-
         .container {
             max-width: 600px;
             margin: 0 auto;
@@ -21,23 +20,19 @@
             border-radius: 8px;
             box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
         }
-
         h1 {
             color: #2c3e50;
             margin-bottom: 20px;
         }
-
         .upload-section {
             border: 2px dashed #ccc;
             padding: 30px;
             margin-bottom: 20px;
             border-radius: 8px;
         }
-
         #fileInput {
             display: none;
         }
-
         .file-label {
             background-color: #3498db;
             color: white;
@@ -48,18 +43,15 @@
             display: inline-block;
             transition: background-color 0.3s;
         }
-
         .file-label:hover {
             background-color: #2980b9;
         }
-
         .selected-file {
             margin-top: 15px;
             font-style: italic;
             color: #555;
             display: block;
         }
-
         #exportAllButton {
             background-color: #2ecc71;
             color: white;
@@ -72,35 +64,29 @@
             transition: background-color 0.3s;
             margin-top: 10px;
         }
-
         #exportAllButton:hover:not(:disabled) {
             background-color: #27ae60;
         }
-
         #exportAllButton:disabled {
             background-color: #bdc3c7;
             cursor: not-allowed;
         }
-
         .message {
             padding: 10px;
             margin: 10px 0;
             border-radius: 5px;
             font-weight: bold;
         }
-
         .error {
             background-color: #fdd;
             color: #c0392b;
             border: 1px solid #c0392b;
         }
-
         .success {
             background-color: #dfd;
             color: #27ae60;
             border: 1px solid #27ae60;
         }
-
         .loading {
             margin-top: 20px;
             font-style: italic;
@@ -111,25 +97,20 @@
     <div class="container">
         <h1>SF3 Animation Data Extractor</h1>
         <p>Upload your shit.</p>
-        
         <div class="upload-section">
             <label for="fileInput" class="file-label">
-                📂 Choose Animation File (.bytes)
+                📂 Choose Animation File (.bin/.dat/.anim)
             </label>
             <input type="file" id="fileInput" accept=".bin,.dat,.anim">
             <span id="selectedFileName" class="selected-file">No file selected.</span>
-            
             <button id="exportAllButton" disabled>Export All Frames Data (CSV)</button>
         </div>
-
         <div id="loading" class="loading" style="display:none;">
             Parsing...
         </div>
-
         <div id="errorMessage" class="message error" style="display:none;"></div>
         <div id="successMessage" class="message success" style="display:none;"></div>
     </div>
-
     <script>
         // --- guts---
         class AnimationParser {
@@ -137,80 +118,61 @@
                 this.animationData = null;
                 this.boneIds = [];
             }
-
-            
             halfToFloat(h) {
                 const s = (h & 0x8000) >> 15;
                 const e = (h & 0x7C00) >> 10;
                 const f = h & 0x03FF;
-                
                 if (e === 0) {
                     return (s ? -1 : 1) * Math.pow(2, -14) * (f / Math.pow(2, 10));
                 } else if (e === 0x1F) {
                     return f ? NaN : ((s ? -1 : 1) * Infinity);
                 }
-                
                 return (s ? -1 : 1) * Math.pow(2, e - 15) * (1 + f / Math.pow(2, 10));
             }
-
             // juicy part
             parseCompressedQuaternion(v0, v1, v2) {
                 const scale = 1.0 / 32767.0;
                 const maxValue = 1.4142135;
                 const shift = 0.70710677;
-                
                 const a = ((v1 >> 14) + 4 * (v0 & 0x1FFF)) * scale * maxValue - shift;  // Wadafack is zat 0x1fff bs
                 const b = ((v2 >> 15) + 2 * (v1 & 0x3FFF)) * scale * maxValue - shift;
                 const c = (v2 & 0x7FFF) * scale * maxValue - shift;
-                
                 const d = Math.sqrt(Math.max(0, 1 - a*a - b*b - c*c));
-                
                 const missing = (v0 >> 13) & 3;
-                
                 switch (missing) {
-                    case 0: return [d, a, b, c];
-                    case 1: return [a, d, b, c];
-                    case 2: return [a, b, d, c];
-                    case 3: return [a, b, c, d];
+                    case 0: return [d, a, b, c]; // [W, X, Y, Z]
+                    case 1: return [a, d, b, c]; // [X, W, Y, Z]
+                    case 2: return [a, b, d, c]; // [X, Y, W, Z]
+                    case 3: return [a, b, c, d]; // [X, Y, Z, W]
                     default: return [1, 0, 0, 0];
                 }
             }
-
             async parseAnimationData(arrayBuffer) {
                 try {
                     const dataView = new DataView(arrayBuffer);
                     let offset = 0;
-
                     const header = dataView.getBigInt64(offset, true);
                     offset += 8;
-
                     if (header !== 457546134634734n) {
                         throw new Error('Invalid animation file format');
                     }
-
                     const arrayCount = dataView.getInt16(offset, true);
                     offset += 2;
-
                     offset += arrayCount * 8; // wadafuck happoned haere, idk tbh
-
                     const framesCount = dataView.getInt32(offset, true);
                     offset += 4;
-
                     const bonesCount = dataView.getInt32(offset, true);
                     offset += 4;
-
                     this.boneIds = [];
                     for (let i = 0; i < bonesCount; i++) {
                         this.boneIds.push(dataView.getInt16(offset, true));
                         offset += 2;
                     }
-
                     const frames = [];
                     for (let frameIndex = 0; frameIndex < framesCount; frameIndex++) {
                         const frame = {
                             bones: []
                         };
-
                         for (let boneIndex = 0; boneIndex < bonesCount; boneIndex++) {
                             const px = dataView.getUint16(offset, true); offset += 2;
                             const py = dataView.getUint16(offset, true); offset += 2;
@@ -218,81 +180,67 @@
                             const v0 = dataView.getUint16(offset, true); offset += 2;
                             const v1 = dataView.getUint16(offset, true); offset += 2;
                             const v2 = dataView.getUint16(offset, true); offset += 2;
-
                             const position = [
                                 this.halfToFloat(px),
                                 this.halfToFloat(py),
                                 this.halfToFloat(pz)
                             ];
-
+                            // rotation is returned as [X, Y, Z, W] based on the switch statement logic,
+                            // where X is the first component in the return array (position 0), Y is second (position 1), etc.
+                            // regardless of which component was 'missing'.
                             const rotation = this.parseCompressedQuaternion(v0, v1, v2);
-
                             frame.bones.push({
                                 boneId: this.boneIds[boneIndex],
                                 position: position,
                                 rotation: rotation
                             });
                         }
-
                         frames.push(frame);
                     }
-
                     this.animationData = {
                         frames: frames,
                         framesCount: framesCount,
                         bonesCount: bonesCount,
                         boneIds: this.boneIds
                     };
-
                     return this.animationData;
-
                 } catch (error) {
                     console.error('Error parsing animation:', error);
                     throw error;
                 }
             }
-            
             // order thingee 
             getAllAnimationDataCSV() {
                 if (!this.animationData) return '';
-                
                 // csv shit
+                // MODIFIED: Header now reflects X, Y, Z, W order
                 const csvRows = ['bone_id,frame_number,position_x,position_y,position_z,rotation_x,rotation_y,rotation_z,rotation_w'];
-                
                 for (let frameIndex = 0; frameIndex < this.animationData.framesCount; frameIndex++) {
                     const frame = this.animationData.frames[frameIndex];
                     const frameNumber = frameIndex + 1;
-                    
-                    
                     const sortedBones = [...frame.bones].sort((a, b) => a.boneId - b.boneId);
-
                     for (const bone of sortedBones) {
-                        
-                        
-                        const qW_prev = bone.rotation[0];
-                        const qX_prev = bone.rotation[1];
-                        const qY_prev = bone.rotation[2];
-                        const qZ_prev = bone.rotation[3];
-
+                        // bone.rotation elements are mapped as [qX, qY, qZ, qW] based on the C++ logic:
+                        // The component assigned to Q.x in C++ is at index 0 of the returned array, Q.y at index 1, etc.
+                        const [qX, qY, qZ, qW] = bone.rotation;
+                        // MODIFIED: Data rows now print X, Y, Z, W
                         const row = [
                             bone.boneId,
                             frameNumber,
                             bone.position[0].toFixed(6),
                             bone.position[1].toFixed(6),
                             bone.position[2].toFixed(6),
-                            qX_prev.toFixed(6), // X
-                            qY_prev.toFixed(6), // Y
-                            qZ_prev.toFixed(6), // Z
-                            qW_prev.toFixed(6)  // W
+                            qX.toFixed(6), // X
+                            qY.toFixed(6), // Y
+                            qZ.toFixed(6), // Z
+                            qW.toFixed(6)  // W
                         ];
                         csvRows.push(row.join(','));
                     }
                 }
-                
                 return csvRows.join('\n');
             }
         }
-        
         // --- UI ---
         class SimpleExtractor {
             constructor() {
@@ -300,11 +248,9 @@
                 this.file = null;
                 this.initEventListeners();
             }
-
             initEventListeners() {
                 const fileInput = document.getElementById('fileInput');
                 const exportAllButton = document.getElementById('exportAllButton');
-                
                 fileInput.addEventListener('change', (e) => {
                     this.file = e.target.files[0];
                     if (this.file) {
@@ -316,23 +262,17 @@
                     }
                     this.hideMessages();
                 });
-
                 exportAllButton.addEventListener('click', () => this.exportAllFrames());
             }
-
             async loadAndProcessAnimation() {
                 if (!this.file) return;
-
                 this.showLoading(true);
                 this.hideMessages();
-
                 try {
                     const arrayBuffer = await this.file.arrayBuffer();
                     await this.parser.parseAnimationData(arrayBuffer);
-                    
-                    this.showSuccess(`✅ Animation successfully parsed. ${this.parser.animationData.framesCount} frames and ${this.parser.animationData.bonesCount} bones found. CSV rotation order is now **X, Y, Z, W**.`);
+                    this.showSuccess(`✅ Animation successfully parsed. ${this.parser.animationData.framesCount} frames and ${this.parser.animationData.bonesCount} bones found. The CSV export will now have **sorted bone IDs**.`);
                     document.getElementById('exportAllButton').disabled = false;
-                    
                 } catch (error) {
                     this.showError(`❌ Error processing animation: ${error.message}`);
                     document.getElementById('exportAllButton').disabled = true;
@@ -341,26 +281,21 @@
                     this.showLoading(false);
                 }
             }
-
             exportAllFrames() {
                 if (!this.parser.animationData) {
                     this.showError('No animation data loaded');
                     return;
                 }
-
                 const data = this.parser.getAllAnimationDataCSV();
-                const filename = `${this.file.name.replace(/\.[^/.]+$/, "")}_all_frames_XYZW.csv`;
+                const filename = `${this.file.name.replace(/\.[^/.]+$/, "")}_all_frames_sorted.csv`;
                 const mimeType = 'text/csv';
-
                 if (!data) {
                     this.showError('Could not generate export data');
                     return;
                 }
-
                 this.downloadFile(data, filename, mimeType);
                 this.showSuccess(`⬇️ Exported all ${this.parser.animationData.framesCount} frames to ${filename}!`);
             }
-
             downloadFile(data, filename, mimeType) {
                 const blob = new Blob([data], { type: mimeType });
                 const url = URL.createObjectURL(blob);
@@ -372,35 +307,28 @@
                 document.body.removeChild(a);
                 URL.revokeObjectURL(url);
             }
-
             showLoading(show) {
                 document.getElementById('loading').style.display = show ? 'block' : 'none';
             }
-
             showMessage(id, message, show) {
                 const div = document.getElementById(id);
                 div.textContent = message;
                 div.style.display = show ? 'block' : 'none';
             }
-
             showError(message) {
                 this.showMessage('errorMessage', message, true);
                 this.showMessage('successMessage', '', false);
             }
-
             showSuccess(message) {
                 this.showMessage('successMessage', message, true);
                 this.showMessage('errorMessage', '', false);
                 setTimeout(() => this.hideMessages(), 5000);
             }
-
             hideMessages() {
                 this.showMessage('errorMessage', '', false);
                 this.showMessage('successMessage', '', false);
             }
         }
-
-        
         document.addEventListener('DOMContentLoaded', () => {
             const extractor = new SimpleExtractor();
         });
