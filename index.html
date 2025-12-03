@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SF3 Animation Data Diddler</title>
+    <title>SF3 Animation Data Diddler (XYZW Rotation)</title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -257,7 +257,7 @@
                 if (!this.animationData) return '';
                 
                 // csv shit
-                const csvRows = ['bone_id,frame_number,position_x,position_y,position_z,rotation_w,rotation_x,rotation_y,rotation_z'];
+                const csvRows = ['bone_id,frame_number,position_x,position_y,position_z,rotation_x,rotation_y,rotation_z,rotation_w'];
                 
                 for (let frameIndex = 0; frameIndex < this.animationData.framesCount; frameIndex++) {
                     const frame = this.animationData.frames[frameIndex];
@@ -268,7 +268,11 @@
 
                     for (const bone of sortedBones) {
                         
-                        const [qX, qY, qZ, qW] = bone.rotation;
+                        
+                        const qW_prev = bone.rotation[0];
+                        const qX_prev = bone.rotation[1];
+                        const qY_prev = bone.rotation[2];
+                        const qZ_prev = bone.rotation[3];
 
                         const row = [
                             bone.boneId,
@@ -276,10 +280,10 @@
                             bone.position[0].toFixed(6),
                             bone.position[1].toFixed(6),
                             bone.position[2].toFixed(6),
-                            qW.toFixed(6),
-                            qX.toFixed(6),
-                            qY.toFixed(6),
-                            qZ.toFixed(6)
+                            qX_prev.toFixed(6), // X
+                            qY_prev.toFixed(6), // Y
+                            qZ_prev.toFixed(6), // Z
+                            qW_prev.toFixed(6)  // W
                         ];
                         csvRows.push(row.join(','));
                     }
@@ -326,7 +330,7 @@
                     const arrayBuffer = await this.file.arrayBuffer();
                     await this.parser.parseAnimationData(arrayBuffer);
                     
-                    this.showSuccess(`✅ Animation successfully parsed. ${this.parser.animationData.framesCount} frames and ${this.parser.animationData.bonesCount} bones found. The CSV export will now have **sorted bone IDs**.`);
+                    this.showSuccess(`✅ Animation successfully parsed. ${this.parser.animationData.framesCount} frames and ${this.parser.animationData.bonesCount} bones found. CSV rotation order is now **X, Y, Z, W**.`);
                     document.getElementById('exportAllButton').disabled = false;
                     
                 } catch (error) {
@@ -345,7 +349,7 @@
                 }
 
                 const data = this.parser.getAllAnimationDataCSV();
-                const filename = `${this.file.name.replace(/\.[^/.]+$/, "")}_all_frames_sorted.csv`;
+                const filename = `${this.file.name.replace(/\.[^/.]+$/, "")}_all_frames_XYZW.csv`;
                 const mimeType = 'text/csv';
 
                 if (!data) {
