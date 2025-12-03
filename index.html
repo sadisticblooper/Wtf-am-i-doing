@@ -99,7 +99,7 @@
         <p>Upload your shit.</p>
         <div class="upload-section">
             <label for="fileInput" class="file-label">
-                📂 Choose Animation File (.bin/.dat/.anim)
+                📂 Choose Animation File (.bytes)
             </label>
             <input type="file" id="fileInput" accept=".bin,.dat,.anim">
             <span id="selectedFileName" class="selected-file">No file selected.</span>
@@ -185,9 +185,7 @@
                                 this.halfToFloat(py),
                                 this.halfToFloat(pz)
                             ];
-                            // rotation is returned as [X, Y, Z, W] based on the switch statement logic,
-                            // where X is the first component in the return array (position 0), Y is second (position 1), etc.
-                            // regardless of which component was 'missing'.
+                            
                             const rotation = this.parseCompressedQuaternion(v0, v1, v2);
                             frame.bones.push({
                                 boneId: this.boneIds[boneIndex],
@@ -212,18 +210,14 @@
             // order thingee 
             getAllAnimationDataCSV() {
                 if (!this.animationData) return '';
-                // csv shit
-                // MODIFIED: Header now reflects X, Y, Z, W order
                 const csvRows = ['bone_id,frame_number,position_x,position_y,position_z,rotation_x,rotation_y,rotation_z,rotation_w'];
                 for (let frameIndex = 0; frameIndex < this.animationData.framesCount; frameIndex++) {
                     const frame = this.animationData.frames[frameIndex];
                     const frameNumber = frameIndex + 1;
                     const sortedBones = [...frame.bones].sort((a, b) => a.boneId - b.boneId);
                     for (const bone of sortedBones) {
-                        // bone.rotation elements are mapped as [qX, qY, qZ, qW] based on the C++ logic:
-                        // The component assigned to Q.x in C++ is at index 0 of the returned array, Q.y at index 1, etc.
                         const [qX, qY, qZ, qW] = bone.rotation;
-                        // MODIFIED: Data rows now print X, Y, Z, W
+                        
                         const row = [
                             bone.boneId,
                             frameNumber,
