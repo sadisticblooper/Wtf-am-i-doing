@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SF3 Animation Data Extractor (Simple)</title>
+    <title>SF3 Animation Data Extractor (Sorted)</title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -110,7 +110,7 @@
 <body>
     <div class="container">
         <h1>SF3 Animation Data Extractor</h1>
-        <p>Upload your Shadow Fight 3 animation file to extract all frame data.</p>
+        <p>Upload your shit  **sorted** frame data.</p>
         
         <div class="upload-section">
             <label for="fileInput" class="file-label">
@@ -123,7 +123,7 @@
         </div>
 
         <div id="loading" class="loading" style="display:none;">
-            Parsing animation data... Please wait.
+            Parsing...
         </div>
 
         <div id="errorMessage" class="message error" style="display:none;"></div>
@@ -131,14 +131,14 @@
     </div>
 
     <script>
-        // --- Core Parsing Logic (Kept from original) ---
+        // --- guts---
         class AnimationParser {
             constructor() {
                 this.animationData = null;
                 this.boneIds = [];
             }
 
-            // Convert half-precision float (16-bit) to JavaScript float (32-bit)
+            
             halfToFloat(h) {
                 const s = (h & 0x8000) >> 15;
                 const e = (h & 0x7C00) >> 10;
@@ -153,13 +153,13 @@
                 return (s ? -1 : 1) * Math.pow(2, e - 15) * (1 + f / Math.pow(2, 10));
             }
 
-            // Parse compressed quaternion from three 16-bit values
+            // juicy part
             parseCompressedQuaternion(v0, v1, v2) {
                 const scale = 1.0 / 32767.0;
                 const maxValue = 1.4142135;
                 const shift = 0.70710677;
                 
-                const a = ((v1 >> 14) + 4 * (v0 & 0x1FFF)) * scale * maxValue - shift;
+                const a = ((v1 >> 14) + 4 * (v0 & 0x1FFF)) * scale * maxValue - shift;  // Wadafack is zat 0x1fff bs
                 const b = ((v2 >> 15) + 2 * (v1 & 0x3FFF)) * scale * maxValue - shift;
                 const c = (v2 & 0x7FFF) * scale * maxValue - shift;
                 
@@ -191,7 +191,7 @@
                     const arrayCount = dataView.getInt16(offset, true);
                     offset += 2;
 
-                    offset += arrayCount * 8; // Skip array pointers/data
+                    offset += arrayCount * 8; // wadafuck happoned haere, idk tbh
 
                     const framesCount = dataView.getInt32(offset, true);
                     offset += 4;
@@ -231,7 +231,6 @@
                                 boneId: this.boneIds[boneIndex],
                                 position: position,
                                 rotation: rotation
-                                // Raw data omitted for simplicity in this version
                             });
                         }
 
@@ -253,23 +252,23 @@
                 }
             }
             
+            // order thingee 
             getAllAnimationDataCSV() {
                 if (!this.animationData) return '';
                 
+                // csv shit
                 const csvRows = ['bone_id,frame_number,position_x,position_y,position_z,rotation_w,rotation_x,rotation_y,rotation_z'];
                 
                 for (let frameIndex = 0; frameIndex < this.animationData.framesCount; frameIndex++) {
                     const frame = this.animationData.frames[frameIndex];
                     const frameNumber = frameIndex + 1;
                     
-                    for (const bone of frame.bones) {
-                        // Rotation is stored as [w, x, y, z] in common quaternion libraries, 
-                        // but the parser returns [x, y, z, w] based on the original script's output structure.
-                        // Let's ensure the CSV header matches the output structure: [w, x, y, z] for common tools, 
-                        // so we reorder the array elements here. Original parser output: [d, a, b, c] where d is the missing component.
-                        // For the CSV, we'll map the parser's output [qX, qY, qZ, qW] (based on missing component logic) to standard [qW, qX, qY, qZ]
+                    
+                    const sortedBones = [...frame.bones].sort((a, b) => a.boneId - b.boneId);
+
+                    for (const bone of sortedBones) {
                         
-                        const [qX, qY, qZ, qW] = bone.rotation; // Order from parser's logic
+                        const [qX, qY, qZ, qW] = bone.rotation;
 
                         const row = [
                             bone.boneId,
@@ -290,7 +289,7 @@
             }
         }
         
-        // --- UI and Controller Logic ---
+        // --- UI ---
         class SimpleExtractor {
             constructor() {
                 this.parser = new AnimationParser();
@@ -306,7 +305,6 @@
                     this.file = e.target.files[0];
                     if (this.file) {
                         document.getElementById('selectedFileName').textContent = `Selected: ${this.file.name}`;
-                        // Automatically attempt to parse and enable export upon file selection
                         this.loadAndProcessAnimation();
                     } else {
                         document.getElementById('selectedFileName').textContent = 'No file selected.';
@@ -328,11 +326,11 @@
                     const arrayBuffer = await this.file.arrayBuffer();
                     await this.parser.parseAnimationData(arrayBuffer);
                     
-                    this.showSuccess(`Animation successfully parsed. ${this.parser.animationData.framesCount} frames and ${this.parser.animationData.bonesCount} bones found.`);
+                    this.showSuccess(`✅ Animation successfully parsed. ${this.parser.animationData.framesCount} frames and ${this.parser.animationData.bonesCount} bones found. The CSV export will now have **sorted bone IDs**.`);
                     document.getElementById('exportAllButton').disabled = false;
                     
                 } catch (error) {
-                    this.showError(`Error processing animation: ${error.message}`);
+                    this.showError(`❌ Error processing animation: ${error.message}`);
                     document.getElementById('exportAllButton').disabled = true;
                     console.error(error);
                 } finally {
@@ -347,7 +345,7 @@
                 }
 
                 const data = this.parser.getAllAnimationDataCSV();
-                const filename = `${this.file.name.replace(/\.[^/.]+$/, "")}_all_frames.csv`;
+                const filename = `${this.file.name.replace(/\.[^/.]+$/, "")}_all_frames_sorted.csv`;
                 const mimeType = 'text/csv';
 
                 if (!data) {
@@ -356,7 +354,7 @@
                 }
 
                 this.downloadFile(data, filename, mimeType);
-                this.showSuccess(`Exported all frames to ${filename}!`);
+                this.showSuccess(`⬇️ Exported all ${this.parser.animationData.framesCount} frames to ${filename}!`);
             }
 
             downloadFile(data, filename, mimeType) {
@@ -398,7 +396,7 @@
             }
         }
 
-        // Initialize the extractor when page loads
+        
         document.addEventListener('DOMContentLoaded', () => {
             const extractor = new SimpleExtractor();
         });
