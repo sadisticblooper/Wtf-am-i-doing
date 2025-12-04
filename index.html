@@ -86,10 +86,23 @@
             background-color: #dfd;
             color: #27ae60;
             border: 1px solid #27ae60;
+            text-align: left; /* Adjust for better list display */
         }
         .loading {
             margin-top: 20px;
             font-style: italic;
+        }
+        .bone-list {
+            list-style-type: none;
+            padding: 0;
+            margin: 10px 0;
+            max-height: 100px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            padding: 5px;
+        }
+        .bone-list li {
+            margin-bottom: 3px;
         }
     </style>
 </head>
@@ -112,6 +125,22 @@
         <div id="successMessage" class="message success" style="display:none;"></div>
     </div>
     <script>
+        // --- BONE MAP from bone-map.js ---
+        const BONE_MAP = {
+            0: "pelvis", 1: "stomach", 2: "chest", 3: "neck", 4: "head", 5: "hair", 6: "hair1",
+            7: "zero_joint_hand_l", 8: "clavicle_l", 9: "arm_l", 10: "forearm_l",
+            11: "forearm_twist_l", 12: "hand_l", 13: "weapon_l", 14: "f_big1_l", 15: "f_big2_l", 16: "f_big3_l",
+            17: "f_main1_l", 18: "f_main2_l", 19: "f_main3_l", 20: "f_pointer1_l", 21: "f_pointer2_l", 22: "f_pointer3_l",
+            23: "scapular_l", 24: "chest_l", 25: "zero_joint_hand_r", 26: "clavicle_r", 27: "arm_r", 28: "forearm_r",
+            29: "forearm_twist_r", 30: "hand_r", 31: "weapons_r", 32: "f_big1_r", 33: "f_big2_r", 34: "f_big3_r",
+            35: "f_main1_r", 36: "f_main2_r", 37: "f_main3_r", 38: "f_pointer1_r", 39: "f_pointer2_r", 40: "f_pointer3_r",
+            41: "scapular_r", 42: "chest_r", 43: "zero_joint_pelvis_l", 44: "thigh_l", 45: "calf_l", 46: "foot_l",
+            47: "toe_l", 48: "back_l", 49: "chest_h_49", 50: "stomach_h_50",
+            51: "zero_joint_pelvis_r", 52: "thigh_r", 53: "calf_r", 54: "foot_r", 55: "toe_r", 56: "back_r",
+            57: "biceps_twist_l", 58: "biceps_twist_r", 59: "thigh_twist_l", 60: "thigh_twist_r",
+            61: "foot_r_extra", 62: "toe_r_extra", 63: "weapon_r_extra", 64: "weapon_l_extra", 65: "root_extra",
+        };
+
         // --- guts---
         class AnimationParser {
             constructor() {
@@ -226,16 +255,19 @@
             }
             getAllAnimationDataCSV() {
                 if (!this.animationData) return '';
-                const csvRows = ['bone_id,frame_number,position_x,position_y,position_z,rotation_x,rotation_y,rotation_z,rotation_w'];
+                const csvRows = ['bone_id,bone_name,frame_number,position_x,position_y,position_z,rotation_x,rotation_y,rotation_z,rotation_w'];
                 for (let frameIndex = 0; frameIndex < this.animationData.framesCount; frameIndex++) {
                     const frame = this.animationData.frames[frameIndex];
                     const frameNumber = frameIndex + 1;
+                    // Sort bones by ID for a consistent export order
                     const sortedBones = [...frame.bones].sort((a, b) => a.boneId - b.boneId);
                     for (const bone of sortedBones) {
+                        const boneName = BONE_MAP[bone.boneId] || `bone_${bone.boneId}`; // Use BONE_MAP
                         const [qX, qY, qZ, qW] = bone.rotation;
                         
                         const row = [
                             bone.boneId,
+                            boneName, // Insert bone name
                             frameNumber,
                             bone.position[0].toFixed(6),
                             bone.position[1].toFixed(6),
@@ -281,7 +313,20 @@
                 try {
                     const arrayBuffer = await this.file.arrayBuffer();
                     await this.parser.parseAnimationData(arrayBuffer);
-                    this.showSuccess(`✅ Animation successfully parsed. ${this.parser.animationData.framesCount} frames and ${this.parser.animationData.bonesCount} bones found. The CSV export will now have **sorted bone IDs**.`);
+                    
+                    const boneListHtml = this.parser.animationData.boneIds
+                        .map(id => `<li>ID ${id}: ${BONE_MAP[id] || `(Unknown bone_${id})`}</li>`)
+                        .join('');
+                    
+                    const successMessage = `
+                        <p>✅ Animation successfully parsed.</p>
+                        <p>**Frames:** ${this.parser.animationData.framesCount}</p>
+                        <p>**Bones Found (${this.parser.animationData.bonesCount}):**</p>
+                        <ul class="bone-list">${boneListHtml}</ul>
+                        <p>The CSV export will now contain **bone names** and have sorted bone IDs.</p>
+                    `;
+
+                    this.showSuccess(successMessage);
                     document.getElementById('exportAllButton').disabled = false;
                 } catch (error) {
                     this.showError(`❌ Error processing animation: ${error.message}`);
@@ -297,14 +342,15 @@
                     return;
                 }
                 const data = this.parser.getAllAnimationDataCSV();
-                const filename = `${this.file.name.replace(/\.[^/.]+$/, "")}_all_frames_sorted.csv`;
+                const filename = `${this.file.name.replace(/\.[^/.]+$/, "")}_all_frames_sorted_named.csv`; // Updated filename
                 const mimeType = 'text/csv';
                 if (!data) {
                     this.showError('Could not generate export data');
                     return;
                 }
                 this.downloadFile(data, filename, mimeType);
-                this.showSuccess(`⬇️ Exported all ${this.parser.animationData.framesCount} frames to ${filename}!`);
+                this.showSuccess(`⬇️ Exported all ${this.parser.animationData.framesCount} frames to **${filename}**!`);
+                setTimeout(() => this.hideMessages(), 5000); // Keep success message for download a bit longer
             }
             downloadFile(data, filename, mimeType) {
                 const blob = new Blob([data], { type: mimeType });
@@ -320,23 +366,27 @@
             showLoading(show) {
                 document.getElementById('loading').style.display = show ? 'block' : 'none';
             }
-            showMessage(id, message, show) {
+            showMessage(id, message, isHtml) {
                 const div = document.getElementById(id);
-                div.textContent = message;
-                div.style.display = show ? 'block' : 'none';
+                if (isHtml) {
+                    div.innerHTML = message;
+                } else {
+                    div.textContent = message;
+                }
             }
             showError(message) {
-                this.showMessage('errorMessage', message, true);
-                this.showMessage('successMessage', '', false);
+                this.showMessage('errorMessage', message, false);
+                document.getElementById('errorMessage').style.display = 'block';
+                document.getElementById('successMessage').style.display = 'none';
             }
             showSuccess(message) {
-                this.showMessage('successMessage', message, true);
-                this.showMessage('errorMessage', '', false);
-                setTimeout(() => this.hideMessages(), 5000);
+                this.showMessage('successMessage', message, true); // Use innerHTML for bone list
+                document.getElementById('successMessage').style.display = 'block';
+                document.getElementById('errorMessage').style.display = 'none';
             }
             hideMessages() {
-                this.showMessage('errorMessage', '', false);
-                this.showMessage('successMessage', '', false);
+                document.getElementById('errorMessage').style.display = 'none';
+                document.getElementById('successMessage').style.display = 'none';
             }
         }
         document.addEventListener('DOMContentLoaded', () => {
