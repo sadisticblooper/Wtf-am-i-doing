@@ -129,21 +129,38 @@
                 }
                 return (s ? -1 : 1) * Math.pow(2, e - 15) * (1 + f / Math.pow(2, 10));
             }
-            // juicy part
+            // FIXED: Added sign bit handling for reconstructed component
             parseCompressedQuaternion(v0, v1, v2) {
                 const scale = 1.0 / 32767.0;
                 const maxValue = 1.4142135;
                 const shift = 0.70710677;
-                const a = ((v1 >> 14) + 4 * (v0 & 0x1FFF)) * scale * maxValue - shift;  // Wadafack is zat 0x1fff bs
+                
+                // Extract which component was omitted (bits 13-14)
+                const missing = (v0 >> 13) & 3;
+                
+                // Extract sign bit (bit 15) - determines sign of reconstructed component
+                const signBit = (v0 >> 15) & 1;
+                
+                // Calculate the three stored components
+                const a = ((v1 >> 14) + 4 * (v0 & 0x1FFF)) * scale * maxValue - shift;
                 const b = ((v2 >> 15) + 2 * (v1 & 0x3FFF)) * scale * maxValue - shift;
                 const c = (v2 & 0x7FFF) * scale * maxValue - shift;
-                const d = Math.sqrt(Math.max(0, 1 - a*a - b*b - c*c));
-                const missing = (v0 >> 13) & 3;
+                
+                // Calculate the reconstructed (omitted) component
+                const dSquared = 1.0 - (a*a + b*b + c*c);
+                let d = dSquared > 0 ? Math.sqrt(dSquared) : 0;
+                
+                // Apply sign based on sign bit
+                if (signBit === 1) {
+                    d = -d;
+                }
+                
+                // Reorder components based on which one was omitted
                 switch (missing) {
-                    case 0: return [d, a, b, c]; // [W, X, Y, Z]
-                    case 1: return [a, d, b, c]; // [X, W, Y, Z]
-                    case 2: return [a, b, d, c]; // [X, Y, W, Z]
-                    case 3: return [a, b, c, d]; // [X, Y, Z, W]
+                    case 0: return [d, a, b, c]; // W was omitted, return [W, X, Y, Z]
+                    case 1: return [a, d, b, c]; // X was omitted, return [X, W, Y, Z]
+                    case 2: return [a, b, d, c]; // Y was omitted, return [X, Y, W, Z]
+                    case 3: return [a, b, c, d]; // Z was omitted, return [X, Y, Z, W]
                     default: return [1, 0, 0, 0];
                 }
             }
@@ -158,7 +175,7 @@
                     }
                     const arrayCount = dataView.getInt16(offset, true);
                     offset += 2;
-                    offset += arrayCount * 8; // wadafuck happoned haere, idk tbh
+                    offset += arrayCount * 8;
                     const framesCount = dataView.getInt32(offset, true);
                     offset += 4;
                     const bonesCount = dataView.getInt32(offset, true);
@@ -207,7 +224,6 @@
                     throw error;
                 }
             }
-            // order thingee 
             getAllAnimationDataCSV() {
                 if (!this.animationData) return '';
                 const csvRows = ['bone_id,frame_number,position_x,position_y,position_z,rotation_x,rotation_y,rotation_z,rotation_w'];
@@ -224,10 +240,10 @@
                             bone.position[0].toFixed(6),
                             bone.position[1].toFixed(6),
                             bone.position[2].toFixed(6),
-                            qX.toFixed(6), // X
-                            qY.toFixed(6), // Y
-                            qZ.toFixed(6), // Z
-                            qW.toFixed(6)  // W
+                            qX.toFixed(6),
+                            qY.toFixed(6),
+                            qZ.toFixed(6),
+                            qW.toFixed(6)
                         ];
                         csvRows.push(row.join(','));
                     }
