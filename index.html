@@ -257,7 +257,7 @@
                 if (!this.animationData) return '';
                 
                 // **MODIFICATION 1: Update CSV Header to use combined column**
-                const csvRows = ['bone_name_id,frame_number,position_x,position_y,position_z,rotation_x,rotation_y,rotation_z,rotation_w'];
+                const csvRows = ['bone_id,frame_number,position_x,position_y,position_z,rotation_x,rotation_y,rotation_z,rotation_w'];
                 
                 for (let frameIndex = 0; frameIndex < this.animationData.framesCount; frameIndex++) {
                     const frame = this.animationData.frames[frameIndex];
