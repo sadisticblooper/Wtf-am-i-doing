@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SF3 Animation Data Diddler</title>
+    <title>SF3 Animation Data Extractor</title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -255,19 +255,25 @@
             }
             getAllAnimationDataCSV() {
                 if (!this.animationData) return '';
-                const csvRows = ['bone_id,bone_name,frame_number,position_x,position_y,position_z,rotation_x,rotation_y,rotation_z,rotation_w'];
+                
+                // **MODIFICATION 1: Update CSV Header to use combined column**
+                const csvRows = ['bone_name_id,frame_number,position_x,position_y,position_z,rotation_x,rotation_y,rotation_z,rotation_w'];
+                
                 for (let frameIndex = 0; frameIndex < this.animationData.framesCount; frameIndex++) {
                     const frame = this.animationData.frames[frameIndex];
                     const frameNumber = frameIndex + 1;
                     // Sort bones by ID for a consistent export order
                     const sortedBones = [...frame.bones].sort((a, b) => a.boneId - b.boneId);
                     for (const bone of sortedBones) {
-                        const boneName = BONE_MAP[bone.boneId] || `bone_${bone.boneId}`; // Use BONE_MAP
+                        const boneName = BONE_MAP[bone.boneId] || `Unknown_bone`;
+                        
+                        // **MODIFICATION 2: Create combined bone_name_id column (e.g., pelvis-0)**
+                        const boneNameID = `${boneName}-${bone.boneId}`; 
+                        
                         const [qX, qY, qZ, qW] = bone.rotation;
                         
                         const row = [
-                            bone.boneId,
-                            boneName, // Insert bone name
+                            boneNameID, // Insert combined bone name and ID
                             frameNumber,
                             bone.position[0].toFixed(6),
                             bone.position[1].toFixed(6),
@@ -315,7 +321,10 @@
                     await this.parser.parseAnimationData(arrayBuffer);
                     
                     const boneListHtml = this.parser.animationData.boneIds
-                        .map(id => `<li>ID ${id}: ${BONE_MAP[id] || `(Unknown bone_${id})`}</li>`)
+                        .map(id => {
+                            const boneName = BONE_MAP[id] || `Unknown_bone`;
+                            return `<li>${boneName}-${id}</li>`; // Display in the new format
+                        })
                         .join('');
                     
                     const successMessage = `
@@ -323,7 +332,7 @@
                         <p>**Frames:** ${this.parser.animationData.framesCount}</p>
                         <p>**Bones Found (${this.parser.animationData.bonesCount}):**</p>
                         <ul class="bone-list">${boneListHtml}</ul>
-                        <p>The CSV export will now contain **bone names** and have sorted bone IDs.</p>
+                        <p>The CSV export will now use a single **bone_name_id** column (e.g., Pelvis-0).</p>
                     `;
 
                     this.showSuccess(successMessage);
@@ -342,7 +351,7 @@
                     return;
                 }
                 const data = this.parser.getAllAnimationDataCSV();
-                const filename = `${this.file.name.replace(/\.[^/.]+$/, "")}_all_frames_sorted_named.csv`; // Updated filename
+                const filename = `${this.file.name.replace(/\.[^/.]+$/, "")}_all_frames_combined_name_id.csv`; // Updated filename
                 const mimeType = 'text/csv';
                 if (!data) {
                     this.showError('Could not generate export data');
