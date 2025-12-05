@@ -3,13 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Skeletal Animation Compensator Tool</title>
+    <title>Skeletal Animation Compensator Tool V3</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js"></script>
     <style>
         body {
             font-family: 'Inter', sans-serif;
-            background-color: #1f2937; /* Dark slate background */
+            background-color: #1f2937;
             color: #f3f4f6;
             padding: 20px;
             display: flex;
@@ -18,7 +18,7 @@
             min-height: 100vh;
         }
         .container {
-            background: #374151; /* Slightly lighter container */
+            background: #374151;
             padding: 30px;
             border-radius: 12px;
             box-shadow: 0 8px 20px rgba(0, 0, 0, 0.4);
@@ -27,7 +27,7 @@
             border: 1px solid #4b5563;
         }
         h2 {
-            color: #34d399; /* Green Accent */
+            color: #f59e0b; /* Amber Accent */
             text-align: center;
             margin-bottom: 25px;
             font-size: 1.5rem;
@@ -64,7 +64,7 @@
             cursor: pointer;
         }
         button {
-            background-color: #10b981; /* Primary CTA green */
+            background-color: #f59e0b;
             color: white;
             cursor: pointer;
             transition: background-color 0.3s;
@@ -72,7 +72,7 @@
             text-transform: uppercase;
         }
         button:hover:not(:disabled) {
-            background-color: #059669;
+            background-color: #d97706;
         }
         button:disabled {
             background-color: #6b7280;
@@ -94,8 +94,8 @@
 <body>
 
 <div class="container">
-    <h2>Bind Pose Compensation Utility</h2>
-    <p style="font-size: 14px; text-align: center; color: #9ca3af; margin-bottom: 20px;">Generates a new skeleton file that compensates for animation transform at a specific frame.</p>
+    <h2>Bind Pose Compensation Utility V3 (Simplified)</h2>
+    <p style="font-size: 14px; text-align: center; color: #9ca3af; margin-bottom: 20px;">Uses direct quaternion and vector subtraction for maximum compatibility with simplified engines.</p>
 
     <div class="control-group">
         <label for="skeletonInput">1. Original Skeleton Bind Pose (.txt)</label>
@@ -103,7 +103,7 @@
     </div>
 
     <div class="control-group">
-        <label for="csvInput">2. Animation Data (.csv)</label>
+        <label for="csvInput">2. Animation Data (Local Transform) (.csv)</label>
         <input type="file" id="csvInput" accept=".csv" />
     </div>
 
@@ -123,18 +123,19 @@
     // 1. CONSTANTS AND DATA STRUCTURES
     // ==========================================
 
+    // The bone map is essential for linking the animation CSV (by ID) to the skeleton TXT (by Name)
     const BONE_MAP = {
         0: "pelvis", 1: "stomach", 2: "chest", 3: "neck", 4: "head", 5: "hair", 6: "hair1",
         7: "zero_joint_hand_l", 8: "clavicle_l", 9: "arm_l", 10: "forearm_l",
         11: "forearm_twist_l", 12: "hand_l", 13: "weapon_l", 14: "f_big1_l", 15: "f_big2_l", 16: "f_big3_l",
         17: "f_main1_l", 18: "f_main2_l", 19: "f_main3_l", 20: "f_pointer1_l", 21: "f_pointer2_l", 22: "f_pointer3_l",
         23: "scapular_l", 24: "chest_l", 25: "zero_joint_hand_r", 26: "clavicle_r", 27: "arm_r", 28: "forearm_r",
-        29: "forearm_twist_r", 30: "hand_r", 31: "weapon_r", 32: "f_big1_r", 33: "f_big2_r", 34: "f_big3_r",
+        29: "forearm_twist_r", 30: "hand_r", 31: "weapon_r", 32: "f_big1_r", 34: "f_big3_r",
         35: "f_main1_r", 36: "f_main2_r", 37: "f_main3_r", 38: "f_pointer1_r", 39: "f_pointer2_r", 40: "f_pointer3_r",
         41: "scapular_r", 42: "chest_r", 43: "zero_joint_pelvis_l", 44: "thigh_l", 45: "calf_l", 46: "thigh_twist_l",
         47: "foot_l", 48: "toe_l", 49: "zero_joint_pelvis_r", 50: "thigh_r", 51: "calf_r", 52: "thigh_twist_r",
         53: "foot_r", 54: "toe_r", 55: "back_l", 56: "back_r", 57: "camera_target",
-        58: "biceps_twist_l", 59: "biceps_twist_r"
+        58: "biceps_twist_l", 59: "biceps_twist_r", 33: "f_big2_r"
     };
 
     const NAME_TO_ID = Object.entries(BONE_MAP).reduce((acc, [id, name]) => {
@@ -143,10 +144,10 @@
     }, {});
 
     // Global state
-    let originalSkeletonLines = [];     // Raw lines for reconstruction
+    let originalSkeletonLines = [];     
     let hierarchy = {};                 // Map: boneName -> parentName
-    let originalLocalTransforms = {};   // Map: boneName -> {pos: V3, rot: Q} (The T_bind we want to preserve)
-    let animationData = {};             // Map: frameNumber -> boneId -> {px, py, pz, rx, ry, rz, rw} (T_frame)
+    let originalLocalTransforms = {};   // T_bind (Original Local Bind Pose)
+    let animationData = {};             // T_frame (Animation Local Transform)
     let maxLoadedFrame = 0;
 
     // UI elements
@@ -184,12 +185,11 @@
     }
     
     // ==========================================
-    // 3. PARSING LOGIC
+    // 3. PARSING LOGIC (Identical to V2, as this is correct)
     // ==========================================
 
     /**
      * Parses the skeleton TXT file to derive Original Local Bind Pose (T_bind).
-     * @param {string} skeletonText - Raw TXT content.
      */
     function parseSkeleton(skeletonText) {
         setStatus('Parsing skeleton file and calculating T_bind...', 'info');
@@ -209,10 +209,7 @@
             const boneMatch = line.match(/"(.*?)"\s*\[(BONE|Group)\]/);
             const globalMatch = line.match(/G\.Pos:\((.*?)\)\s*\|\s*G\.Rot \(quat\):\((.*?)\)/);
 
-            if (!boneMatch || !globalMatch) {
-                // Ignore lines that are not named bones with global transform data
-                return;
-            }
+            if (!boneMatch || !globalMatch) return;
             
             const name = boneMatch[1];
             
@@ -304,7 +301,7 @@
     }
 
     // ==========================================
-    // 4. CORE COMPENSATION LOGIC
+    // 4. CORE COMPENSATION LOGIC (SIMPLIFIED V3)
     // ==========================================
 
     function processAndDownload() {
@@ -321,7 +318,7 @@
             return;
         }
         
-        setStatus(`Calculating compensated skeleton... (Frame ${frameToCompensate})`, 'info');
+        setStatus(`Calculating compensated skeleton using simplified math...`, 'info');
 
         const compensatedLocalTransforms = {}; // T'_bind
         
@@ -340,11 +337,14 @@
                 const Q_frame = new THREE.Quaternion(animFrame.rx, animFrame.ry, animFrame.rz, animFrame.rw);
                 const P_frame = new THREE.Vector3(animFrame.px, animFrame.py, animFrame.pz);
 
-                // Compensating Rotation: Q'_bind = Q_bind * Q_frame^-1
+                // --- V3 SIMPLIFIED COMPENSATION LOGIC (As requested) ---
+                
+                // 1. Rotation Compensation: Q'_bind = Q_bind * Q_frame^-1
                 const Q_frame_inv = Q_frame.clone().invert();
                 const Q_new = Q_bind.clone().multiply(Q_frame_inv);
 
-                // Compensating Position: P'_bind = P_bind - P_frame
+                // 2. Position Compensation: P'_bind = P_bind - P_frame (Direct subtraction)
+                // This is mathematically simple but bypasses the rotation/translation order complexity.
                 const P_new = P_bind.clone().sub(P_frame);
 
                 compensatedLocalTransforms[boneName] = { pos: P_new, rot: Q_new };
@@ -368,7 +368,6 @@
 
                 if (T_new_local) {
                     const parentName = hierarchy[boneName];
-                    // Get the *NEW* Global Matrix of the parent, or Identity for the root
                     const T_parent_new_global = newGlobalTransformsCache[parentName] || new THREE.Matrix4();
                     
                     // Compose T'_bind
@@ -396,18 +395,17 @@
                     );
                     newSkeletonLines.push(newLine);
                 } else {
-                    // Fallback: If no local transform was calculated (e.g., group), keep original line
                     newSkeletonLines.push(line);
                 }
             } else {
-                 // Preserve non-bone lines (e.g., empty lines, groups without transform data)
+                 // Preserve non-bone lines 
                 newSkeletonLines.push(line);
             }
         }
 
         // --- 4. Trigger Download ---
         const modifiedContent = newSkeletonLines.join('\n');
-        downloadFile(modifiedContent, `compensated_skeleton_F${frameToCompensate}.txt`, 'text/plain');
+        downloadFile(modifiedContent, `compensated_skeleton_V3_F${frameToCompensate}.txt`, 'text/plain');
         
         setStatus(`Successfully generated and downloaded compensated skeleton file.`, 'status-success');
     }
