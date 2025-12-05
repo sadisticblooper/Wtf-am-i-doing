@@ -3,115 +3,119 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Skeletal Animation Compensator</title>
+    <title>Skeletal Animation Compensator Tool</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js"></script>
     <style>
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background-color: #2c3e50;
-            color: #ecf0f1;
+            font-family: 'Inter', sans-serif;
+            background-color: #1f2937; /* Dark slate background */
+            color: #f3f4f6;
             padding: 20px;
             display: flex;
             justify-content: center;
-            align-items: flex-start;
+            align-items: center;
             min-height: 100vh;
         }
         .container {
-            background: #34495e;
+            background: #374151; /* Slightly lighter container */
             padding: 30px;
-            border-radius: 10px;
-            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+            border-radius: 12px;
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.4);
             width: 100%;
-            max-width: 600px;
+            max-width: 550px;
+            border: 1px solid #4b5563;
         }
         h2 {
-            color: #3498db;
-            border-bottom: 2px solid #3498db;
-            padding-bottom: 10px;
-            margin-top: 0;
+            color: #34d399; /* Green Accent */
+            text-align: center;
+            margin-bottom: 25px;
+            font-size: 1.5rem;
         }
         .control-group {
-            margin-bottom: 15px;
-            padding: 10px;
-            border: 1px solid #4a627d;
-            border-radius: 5px;
+            margin-bottom: 20px;
+            padding: 15px;
+            background: #4b5563;
+            border-radius: 8px;
         }
         label {
             display: block;
-            margin-bottom: 5px;
-            font-weight: bold;
-            color: #bdc3c7;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #d1d5db;
+            font-size: 0.9rem;
         }
         input[type="file"], input[type="number"], button {
             width: 100%;
-            padding: 10px;
+            padding: 12px;
             margin-top: 5px;
-            border-radius: 5px;
-            border: none;
+            border-radius: 6px;
+            border: 1px solid #6b7280;
             box-sizing: border-box;
             font-size: 14px;
         }
         input[type="number"] {
-            background-color: #2c3e50;
-            color: #ecf0f1;
-            border: 1px solid #3498db;
+            background-color: #1f2937;
+            color: #f3f4f6;
         }
         input[type="file"] {
-            background-color: #3f5872;
-            color: #ecf0f1;
+            background-color: #374151;
+            color: #f3f4f6;
+            cursor: pointer;
         }
         button {
-            background-color: #2ecc71;
+            background-color: #10b981; /* Primary CTA green */
             color: white;
             cursor: pointer;
             transition: background-color 0.3s;
             font-weight: bold;
+            text-transform: uppercase;
         }
         button:hover:not(:disabled) {
-            background-color: #27ae60;
+            background-color: #059669;
         }
         button:disabled {
-            background-color: #7f8c8d;
+            background-color: #6b7280;
             cursor: not-allowed;
         }
         #status {
-            margin-top: 20px;
+            margin-top: 25px;
             padding: 15px;
-            background: #e74c3c;
-            border-radius: 5px;
-            font-weight: bold;
+            border-radius: 8px;
+            font-weight: 600;
             display: none;
+            text-align: center;
         }
-        .success { background: #27ae60 !important; }
-        .info { background: #3498db !important; }
+        .status-success { background: #059669; }
+        .status-info { background: #3b82f6; }
+        .status-error { background: #ef4444; }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <h2>Skeletal Bind Pose Compensator</h2>
-    <p style="font-size: 14px; color: #bdc3c7;">This tool generates a modified skeleton file that, when combined with the animation data from the selected frame, results in the original bind pose (i.e., it subtracts the frame's transformation).</p>
+    <h2>Bind Pose Compensation Utility</h2>
+    <p style="font-size: 14px; text-align: center; color: #9ca3af; margin-bottom: 20px;">Generates a new skeleton file that compensates for animation transform at a specific frame.</p>
 
     <div class="control-group">
-        <label for="skeletonInput">1. Load Original Skeleton TXT (.txt)</label>
+        <label for="skeletonInput">1. Original Skeleton Bind Pose (.txt)</label>
         <input type="file" id="skeletonInput" accept=".txt" />
     </div>
 
     <div class="control-group">
-        <label for="csvInput">2. Load Animation CSV (.csv)</label>
+        <label for="csvInput">2. Animation Data (.csv)</label>
         <input type="file" id="csvInput" accept=".csv" />
     </div>
 
     <div class="control-group">
-        <label for="frameNumber">3. Frame Number to Compensate</label>
-        <input type="number" id="frameNumber" min="1" value="1" placeholder="Enter Frame Number (e.g., 50)" />
-        <p style="font-size: 12px; margin-top: 5px; color: #bdc3c7;">Max loaded frame: <span id="maxFrame">N/A</span></p>
+        <label for="frameNumber">3. Frame Number to Compensate Against</label>
+        <input type="number" id="frameNumber" min="1" value="1" placeholder="e.g., 50" />
+        <p style="font-size: 12px; margin-top: 5px; color: #9ca3af;">Max loaded frame: <span id="maxFrame">N/A</span></p>
     </div>
 
-    <button id="processBtn" disabled>Process & Download Modified Skeleton</button>
+    <button id="processBtn" disabled>Process & Download Compensated Skeleton</button>
 
-    <div id="status" style="display: none;"></div>
+    <div id="status" class="status-info" style="display: none;"></div>
 </div>
 
 <script>
@@ -139,11 +143,10 @@
     }, {});
 
     // Global state
-    let originalSkeletonLines = []; // To preserve original hierarchy and formatting
-    let hierarchy = {};             // Map: boneName -> parentName
-    let originalGlobalTransforms = {}; // Map: boneName -> {pos: Vector3, rot: Quaternion}
-    let originalLocalTransforms = {};  // Map: boneName -> {pos: Vector3, rot: Quaternion}
-    let animationData = {};         // Map: frameNumber -> boneId -> {px, py, pz, rx, ry, rz, rw}
+    let originalSkeletonLines = [];     // Raw lines for reconstruction
+    let hierarchy = {};                 // Map: boneName -> parentName
+    let originalLocalTransforms = {};   // Map: boneName -> {pos: V3, rot: Q} (The T_bind we want to preserve)
+    let animationData = {};             // Map: frameNumber -> boneId -> {px, py, pz, rx, ry, rz, rw} (T_frame)
     let maxLoadedFrame = 0;
 
     // UI elements
@@ -162,73 +165,66 @@
 
     function setStatus(message, type = 'info') {
         ui.status.textContent = message;
-        ui.status.className = type === 'success' ? 'success' : type === 'info' ? 'info' : '';
+        ui.status.className = `status-${type}`;
         ui.status.style.display = 'block';
     }
 
     function checkReady() {
-        const ready = originalLocalTransforms && Object.keys(originalLocalTransforms).length > 0 && 
-                      animationData && Object.keys(animationData).length > 0;
+        const skeletonReady = Object.keys(originalLocalTransforms).length > 0;
+        const animationReady = Object.keys(animationData).length > 0;
+        const ready = skeletonReady && animationReady;
         ui.processBtn.disabled = !ready;
         if (ready) {
-            setStatus('Ready to process. Enter frame number and click "Process & Download".', 'info');
+            setStatus('Ready to process. Enter frame number and click the button.', 'info');
+        } else if (skeletonReady) {
+            setStatus('Load animation CSV to continue.', 'info');
         } else {
             ui.status.style.display = 'none';
         }
     }
-
+    
     // ==========================================
-    // 3. FILE PARSERS
+    // 3. PARSING LOGIC
     // ==========================================
 
     /**
-     * Parses the skeleton TXT file to extract hierarchy and local bind pose transforms.
-     * The file only provides GLOBAL transforms, so local transforms must be derived.
-     * @param {string} skeletonText - The raw content of the skeleton TXT file.
+     * Parses the skeleton TXT file to derive Original Local Bind Pose (T_bind).
+     * @param {string} skeletonText - Raw TXT content.
      */
     function parseSkeleton(skeletonText) {
-        setStatus('Parsing skeleton file...', 'info');
+        setStatus('Parsing skeleton file and calculating T_bind...', 'info');
         
         originalSkeletonLines = skeletonText.split('\n');
-        originalGlobalTransforms = {};
         originalLocalTransforms = {};
         hierarchy = {};
         
+        // Cache to store the GLOBAL matrix of each bone as it is processed
         const globalTransformsCache = { 'root': new THREE.Matrix4() };
-        const stack = []; // { name, globalMatrix }
-
-        let currentParentName = null;
+        const stack = []; // Stores { name, level, globalMatrix }
 
         originalSkeletonLines.forEach(line => {
             if (!line.trim()) return;
-            
             const leadingSpaces = line.search(/\S/);
             const level = leadingSpaces / 2;
             const boneMatch = line.match(/"(.*?)"\s*\[(BONE|Group)\]/);
-            
-            if (!boneMatch) return;
-            
-            const name = boneMatch[1];
-            
-            // 1. Extract Global Transform
             const globalMatch = line.match(/G\.Pos:\((.*?)\)\s*\|\s*G\.Rot \(quat\):\((.*?)\)/);
-            if (!globalMatch) {
-                // Not a bone with transform data, treat as a group node without specific transform
+
+            if (!boneMatch || !globalMatch) {
+                // Ignore lines that are not named bones with global transform data
                 return;
             }
             
+            const name = boneMatch[1];
+            
+            // 1. Get Original Global Transform (T_global)
             const posArr = globalMatch[1].split(',').map(Number);
             const rotArr = globalMatch[2].split(',').map(Number);
 
             const globalPos = new THREE.Vector3(posArr[0], posArr[1], posArr[2]);
             const globalRot = new THREE.Quaternion(rotArr[0], rotArr[1], rotArr[2], rotArr[3]);
-            const globalMatrix = new THREE.Matrix4().compose(globalPos, globalRot, new THREE.Vector3(1, 1, 1));
+            const T_global = new THREE.Matrix4().compose(globalPos, globalRot, new THREE.Vector3(1, 1, 1));
 
-            originalGlobalTransforms[name] = { pos: globalPos, rot: globalRot };
-            globalTransformsCache[name] = globalMatrix;
-
-            // 2. Determine Parent and Calculate Local Transform (Bind Pose)
-            let parentName = null;
+            // 2. Determine Parent and Parent Global Transform (T_parent_global)
             let parentGlobalMatrix = globalTransformsCache['root'];
 
             while (stack.length > 0 && stack[stack.length - 1].level >= level) {
@@ -237,38 +233,36 @@
 
             if (stack.length > 0) {
                 const parentData = stack[stack.length - 1];
-                parentName = parentData.name;
+                hierarchy[name] = parentData.name;
                 parentGlobalMatrix = parentData.globalMatrix;
-                hierarchy[name] = parentName;
             } else {
                 hierarchy[name] = null; // Root bone
             }
             
-            // Calculate Local Matrix (T_bind) = T_parent_global^-1 * T_global
-            const parentGlobalInv = parentGlobalMatrix.clone().invert();
-            const localMatrix = parentGlobalInv.multiply(globalMatrix);
+            // 3. Calculate Original Local Bind Pose (T_bind) = T_parent_global^-1 * T_global
+            const T_parent_global_inv = parentGlobalMatrix.clone().invert();
+            const T_bind = T_parent_global_inv.multiply(T_global);
             
             const localPos = new THREE.Vector3();
             const localRot = new THREE.Quaternion();
-            const localScale = new THREE.Vector3(); // Not needed, but decompose requires it
-            
-            localMatrix.decompose(localPos, localRot, localScale);
+            T_bind.decompose(localPos, localRot, new THREE.Vector3());
             
             originalLocalTransforms[name] = { pos: localPos, rot: localRot };
 
-            stack.push({ name, level, globalMatrix });
+            // Update cache and stack
+            globalTransformsCache[name] = T_global;
+            stack.push({ name, level, globalMatrix: T_global });
         });
         
-        setStatus(`Skeleton loaded. ${Object.keys(originalLocalTransforms).length} bones found.`, 'success');
+        setStatus(`Skeleton loaded. ${Object.keys(originalLocalTransforms).length} manipulable bones found.`, 'success');
         checkReady();
     }
 
     /**
-     * Parses the animation CSV file.
-     * @param {File} file - The CSV file object.
+     * Parses the animation CSV data.
      */
     function parseAnimationCsv(file) {
-        setStatus('Parsing animation CSV (this may take a moment for large files)...', 'info');
+        setStatus('Parsing animation CSV...', 'info');
         
         animationData = {};
         maxLoadedFrame = 0;
@@ -296,7 +290,6 @@
                 }
             },
             complete: function() {
-                ui.status.className = 'success';
                 setStatus(`Animation loaded. Total frames: ${maxLoadedFrame}.`, 'success');
                 ui.maxFrame.textContent = maxLoadedFrame;
                 ui.frameNumber.max = maxLoadedFrame;
@@ -311,7 +304,7 @@
     }
 
     // ==========================================
-    // 4. CORE PROCESSING & DOWNLOAD
+    // 4. CORE COMPENSATION LOGIC
     // ==========================================
 
     function processAndDownload() {
@@ -328,68 +321,63 @@
             return;
         }
         
-        setStatus(`Calculating compensated bind pose for frame ${frameToCompensate}...`, 'info');
+        setStatus(`Calculating compensated skeleton... (Frame ${frameToCompensate})`, 'info');
 
-        const newLocalTransforms = {}; // T'_bind
-        const newGlobalTransformsCache = {}; // T'_global (for hierarchical calculation)
-
-        // 1. Calculate New Local Transforms (T'_bind)
+        const compensatedLocalTransforms = {}; // T'_bind
+        
+        // --- 1. Calculate New Compensated Local Transforms (T'_bind) ---
         for (const boneName in originalLocalTransforms) {
             const boneId = NAME_TO_ID[boneName];
-            const originalLocal = originalLocalTransforms[boneName];
+            const T_bind_local = originalLocalTransforms[boneName];
             const animFrame = frameData[boneId];
 
-            // If the bone is present in the animation data for this frame
-            if (originalLocal && animFrame) {
-                // Original Bind Pose Local (Q_bind, P_bind)
-                const Q_bind = originalLocal.rot;
-                const P_bind = originalLocal.pos;
+            if (animFrame) {
+                // T_bind: Original Local Transform (Position: P_bind, Rotation: Q_bind)
+                const Q_bind = T_bind_local.rot;
+                const P_bind = T_bind_local.pos;
 
-                // Animation Frame Local (Q_frame, P_frame)
+                // T_frame: Animation Local Transform (Position: P_frame, Rotation: Q_frame)
                 const Q_frame = new THREE.Quaternion(animFrame.rx, animFrame.ry, animFrame.rz, animFrame.rw);
                 const P_frame = new THREE.Vector3(animFrame.px, animFrame.py, animFrame.pz);
 
-                // --- Compensation Logic ---
-                // New Local Rotation (Q'_bind) = Q_bind * Q_frame^-1
+                // Compensating Rotation: Q'_bind = Q_bind * Q_frame^-1
                 const Q_frame_inv = Q_frame.clone().invert();
                 const Q_new = Q_bind.clone().multiply(Q_frame_inv);
 
-                // New Local Position (P'_bind) = P_bind - P_frame
+                // Compensating Position: P'_bind = P_bind - P_frame
                 const P_new = P_bind.clone().sub(P_frame);
 
-                newLocalTransforms[boneName] = { pos: P_new, rot: Q_new };
+                compensatedLocalTransforms[boneName] = { pos: P_new, rot: Q_new };
             } else {
-                // If no animation data, use the original bind pose (no compensation)
-                newLocalTransforms[boneName] = originalLocal;
+                // If no animation data for this bone, use the original bind pose
+                compensatedLocalTransforms[boneName] = T_bind_local;
             }
         }
 
-        // 2. Traverse Hierarchy and Recalculate New Global Transforms (T'_global)
+        // --- 2. Reconstruct Hierarchy and New Global Transforms (T'_global) ---
         const newSkeletonLines = [];
+        const newGlobalTransformsCache = { 'root': new THREE.Matrix4() };
 
         for (const line of originalSkeletonLines) {
             const boneMatch = line.match(/"(.*?)"\s*\[(BONE|Group)\]/);
-            
-            if (boneMatch) {
+            const globalMatch = line.match(/G\.Pos:\((.*?)\)\s*\|\s*G\.Rot \(quat\):\((.*?)\)/);
+
+            if (boneMatch && globalMatch) {
                 const boneName = boneMatch[1];
-                const newLocal = newLocalTransforms[boneName];
+                const T_new_local = compensatedLocalTransforms[boneName];
 
-                if (newLocal) {
+                if (T_new_local) {
                     const parentName = hierarchy[boneName];
-                    let parentNewGlobalMatrix = new THREE.Matrix4(); // Identity for root
-
-                    if (parentName) {
-                        // Use the new global transform of the parent
-                        parentNewGlobalMatrix = newGlobalTransformsCache[parentName] || new THREE.Matrix4();
-                    }
+                    // Get the *NEW* Global Matrix of the parent, or Identity for the root
+                    const T_parent_new_global = newGlobalTransformsCache[parentName] || new THREE.Matrix4();
                     
-                    // Compose the new local matrix (T'_bind)
-                    const T_new_local = new THREE.Matrix4().compose(newLocal.pos, newLocal.rot, new THREE.Vector3(1, 1, 1));
+                    // Compose T'_bind
+                    const T_new_bind_matrix = new THREE.Matrix4().compose(T_new_local.pos, T_new_local.rot, new THREE.Vector3(1, 1, 1));
                     
                     // Calculate T'_global = T'_parent_global * T'_bind
-                    const T_new_global = parentNewGlobalMatrix.clone().multiply(T_new_local);
+                    const T_new_global = T_parent_new_global.clone().multiply(T_new_bind_matrix);
                     
-                    // Decompose to get the new global position and quaternion
+                    // Decompose T'_global for TXT export
                     const P_new_global = new THREE.Vector3();
                     const Q_new_global = new THREE.Quaternion();
                     T_new_global.decompose(P_new_global, Q_new_global, new THREE.Vector3());
@@ -397,31 +385,31 @@
                     // Store new global matrix for children
                     newGlobalTransformsCache[boneName] = T_new_global;
 
-                    // 3. Format New TXT Line
+                    // 3. Rebuild the TXT Line
                     const newGlobalPosStr = `${P_new_global.x.toFixed(6)},${P_new_global.y.toFixed(6)},${P_new_global.z.toFixed(6)}`;
                     const newGlobalRotStr = `${Q_new_global.x.toFixed(6)},${Q_new_global.y.toFixed(6)},${Q_new_global.z.toFixed(6)},${Q_new_global.w.toFixed(6)}`;
                     
-                    // Rebuild the line with the new G.Pos and G.Rot values
+                    // Replace the Global Transform portion of the original line
                     const newLine = line.replace(
                         /G\.Pos:\((.*?)\)\s*\|\s*G\.Rot \(quat\):\((.*?)\)/,
                         `G.Pos:(${newGlobalPosStr}) | G.Rot (quat):(${newGlobalRotStr})`
                     );
                     newSkeletonLines.push(newLine);
                 } else {
-                    // Bone not in originalLocalTransforms (maybe a Group header without transform data)
+                    // Fallback: If no local transform was calculated (e.g., group), keep original line
                     newSkeletonLines.push(line);
                 }
             } else {
-                 // Preserve non-bone lines (e.g., empty lines, comments)
+                 // Preserve non-bone lines (e.g., empty lines, groups without transform data)
                 newSkeletonLines.push(line);
             }
         }
 
-        // 4. Trigger Download
+        // --- 4. Trigger Download ---
         const modifiedContent = newSkeletonLines.join('\n');
         downloadFile(modifiedContent, `compensated_skeleton_F${frameToCompensate}.txt`, 'text/plain');
         
-        setStatus(`Successfully generated and downloaded compensated skeleton file.`, 'success');
+        setStatus(`Successfully generated and downloaded compensated skeleton file.`, 'status-success');
     }
 
     /**
@@ -451,7 +439,7 @@
             try {
                 parseSkeleton(event.target.result);
             } catch (error) {
-                setStatus(`Error processing skeleton: ${error.message}`, 'error');
+                setStatus(`Error processing skeleton: ${error.message}`, 'status-error');
                 console.error(error);
             }
         };
