@@ -1,0 +1,890 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Skeletal Animation Viewer & Editor</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #1a1a1a; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; color: white; }
+        #container { width: 100vw; height: 100vh; }
+        /* Scrollbar styling */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #222; }
+        ::-webkit-scrollbar-thumb { background: #555; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #777; }
+        #ui-layer {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(0, 0, 0, 0.9);
+            padding: 15px;
+            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            width: 320px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.6);
+            border: 1px solid #444;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+        h3 { margin: 0 0 5px 0; color: #4CAF50; font-size: 16px; border-bottom: 1px solid #444; padding-bottom: 5px; }
+        .control-group { display: flex; flex-direction: column; gap: 5px; margin-bottom: 5px; }
+        button {
+            padding: 8px;
+            background: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: background 0.2s;
+            font-size: 13px;
+        }
+        button:hover { background: #45a049; }
+        button.remove-mod-btn:hover { background: #d32f2f; }
+        /* New Download Button Style */
+        #downloadBtn {
+            background: #2196F3; /* Blue */
+            margin-top: 10px;
+        }
+        #downloadBtn:hover { background: #1976D2; }
+
+        input[type="range"] { width: 100%; cursor: pointer; }
+        input[type="file"] { font-size: 11px; }
+        .label { font-size: 11px; color: #aaa; display: flex; justify-content: space-between; }
+        .value { color: #fff; font-weight: bold; }
+        #progress-container {
+            width: 100%; height: 4px; background: #333; border-radius: 2px; overflow: hidden; margin-top: 5px; display: none;
+        }
+        #progress-bar { width: 0%; height: 100%; background: #4CAF50; transition: width 0.1s; }
+        #status { font-size: 11px; color: #ffeb3b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        #anim-controls { display: none; flex-direction: column; gap: 10px; border-top: 1px solid #444; padding-top: 10px; }
+        .mod-box {
+            display: flex; align-items: center; background: #333; 
+            padding: 6px 8px; border-radius: 4px; font-size: 11px; 
+            border: 1px solid #4CAF50; margin-bottom: 5px;
+        }
+        /* Transform Grid Styles */
+        .transform-grid {
+            display: grid;
+            grid-template-columns: 20px 1fr 1fr 1fr;
+            gap: 5px;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+        .transform-grid span { font-size: 11px; color: #aaa; font-weight: bold; }
+        .transform-input {
+            width: 100%;
+            background: #222;
+            border: 1px solid #444;
+            color: white;
+            padding: 4px;
+            border-radius: 3px;
+            font-size: 11px;
+            text-align: center;
+        }
+        .transform-input:focus { border-color: #4CAF50; outline: none; }
+        .axis-label-x { color: #ff5252 !important; }
+        .axis-label-y { color: #4CAF50 !important; }
+        .axis-label-z { color: #448aff !important; }
+        .section-header {
+            font-size: 12px; font-weight: bold; color: #fff; margin-bottom: 5px; margin-top: 5px;
+        }
+        .ref-status { font-size: 10px; color: #448aff; margin-top: 2px; }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js"></script>
+<link rel="stylesheet" href="/index.css">
+</head>
+<body>
+<div id="ui-layer">
+    <h3>Skeletal Animator & Editor</h3>
+    
+    <!-- MAIN SKELETON LOAD -->
+    <div class="control-group">
+        <label class="label">1. Load Main Skeleton TXT (Blue):</label>
+        <input type="file" id="skeletonInput" accept=".txt" />
+        <div id="skeleton-status">Waiting for skeleton file...</div>
+    </div>
+
+    <!-- REFERENCE SKELETON LOAD -->
+    <div class="control-group">
+        <label class="label">1b. Load Reference Skeleton (Yellow):</label>
+        <input type="file" id="refSkeletonInput" accept=".txt" />
+        <div id="ref-skeleton-status" class="ref-status">Optional reference</div>
+    </div>
+
+    <div class="control-group">
+        <label class="label">2. Load Animation CSV:</label>
+        <input type="file" id="csvInput" accept=".csv" disabled />
+        <div id="progress-container"><div id="progress-bar"></div></div>
+        <div id="status">Load skeleton first</div>
+    </div>
+    <div id="anim-controls">
+        <div class="control-group">
+            <div class="label"><span>Timeline</span><span id="frameDisplay" class="value">Frame: 0</span></div>
+            <input type="range" id="timeline" min="0" max="100" value="0" step="1">
+        </div>
+        <div class="control-group">
+             <div class="label"><span>Speed</span><span id="speedDisplay" class="value">30 FPS</span></div>
+            <input type="range" id="speedInput" min="1" max="120" value="30" step="1">
+        </div>
+        <button id="playBtn">Play Animation</button>
+    </div>
+    <hr style="border-top: 1px solid #444;">
+    <div id="bone-modifier-section">
+        <h3>Bone Modifier 🦴</h3>
+        <div class="control-group">
+            <label class="label">3. Select Bone to Edit:</label>
+            <select id="bone-select" style="width: 100%; padding: 6px; background: #333; color: white; border: 1px solid #4CAF50; border-radius: 4px;"></select>
+        </div>
+        <div id="editor-controls" style="display: none;">
+            <div style="border: 1px dashed #555; padding: 8px; border-radius: 4px; margin-bottom: 10px;">
+                <div class="section-header">Axis Flipping (Inversion)</div>
+                <div style="display: flex; gap: 5px; margin-bottom: 5px;">
+                    <label style="font-size: 10px;"><input type="checkbox" id="invPos-x"> Pos X</label>
+                    <label style="font-size: 10px;"><input type="checkbox" id="invPos-y"> Pos Y</label>
+                    <label style="font-size: 10px;"><input type="checkbox" id="invPos-z"> Pos Z</label>
+                </div>
+                <div style="display: flex; gap: 5px;">
+                    <label style="font-size: 10px;"><input type="checkbox" id="invRot-x"> Rot X</label>
+                    <label style="font-size: 10px;"><input type="checkbox" id="invRot-y"> Rot Y</label>
+                    <label style="font-size: 10px;"><input type="checkbox" id="invRot-z"> Rot Z</label>
+                    <label style="font-size: 10px;"><input type="checkbox" id="invRot-w"> Rot W</label>
+                </div>
+            </div>
+            <div class="section-header">Local Position (Offsets added)</div>
+            <div class="transform-grid">
+                <span>Pos</span>
+                <div><span class="axis-label-x">X</span> <input type="number" id="edit-pos-x" class="transform-input" step="0.1"></div>
+                <div><span class="axis-label-y">Y</span> <input type="number" id="edit-pos-y" class="transform-input" step="0.1"></div>
+                <div><span class="axis-label-z">Z</span> <input type="number" id="edit-pos-z" class="transform-input" step="0.1"></div>
+            </div>
+            <div class="section-header">Local Rotation (Degrees)</div>
+            <div class="transform-grid">
+                <span>Rot</span>
+                <div><span class="axis-label-x">X°</span> <input type="number" id="edit-rot-x" class="transform-input" step="1"></div>
+                <div><span class="axis-label-y">Y°</span> <input type="number" id="edit-rot-y" class="transform-input" step="1"></div>
+                <div><span class="axis-label-z">Z°</span> <input type="number" id="edit-rot-z" class="transform-input" step="1"></div>
+            </div>
+            <button id="reset-offsets-btn" style="width:100%; background: #555; font-size: 11px; margin-top:5px;">Reset Manual Offsets for Bone</button>
+        </div>
+        <div style="margin-top: 15px;">
+            <div style="font-size: 12px; font-weight: bold; color: #ffeb3b; margin-bottom: 5px;">Active Bone Modifications:</div>
+            <div id="active-mods-container"></div>
+        </div>
+        <!-- Download Button Added Here -->
+        <button id="downloadBtn">Download Snapshot (Current Pose)</button>
+    </div>
+</div>
+<div id="container"></div>
+<script>
+    // ==========================================
+    // 1. DATA DEFINITIONS
+    // ==========================================
+    const BONE_MAP = {
+        0: "pelvis", 1: "stomach", 2: "chest", 3: "neck", 4: "head", 5: "hair", 6: "hair1",
+        7: "zero_joint_hand_l", 8: "clavicle_l", 9: "arm_l", 10: "forearm_l",
+        11: "forearm_twist_l", 12: "hand_l", 13: "weapon_l", 14: "f_big1_l", 15: "f_big2_l", 16: "f_big3_l",
+        17: "f_main1_l", 18: "f_main2_l", 19: "f_main3_l", 20: "f_pointer1_l", 21: "f_pointer2_l", 22: "f_pointer3_l",
+        23: "scapular_l", 24: "chest_l", 25: "zero_joint_hand_r", 26: "clavicle_r", 27: "arm_r", 28: "forearm_r",
+        29: "forearm_twist_r", 30: "hand_r", 31: "weapon_r", 32: "f_big1_r", 33: "f_big2_r", 34: "f_big3_r",
+        35: "f_main1_r", 36: "f_main2_r", 37: "f_main3_r", 38: "f_pointer1_r", 39: "f_pointer2_r", 40: "f_pointer3_r",
+        41: "scapular_r", 42: "chest_r", 43: "zero_joint_pelvis_l", 44: "thigh_l", 45: "calf_l", 46: "thigh_twist_l",
+        47: "foot_l", 48: "toe_l", 49: "zero_joint_pelvis_r", 50: "thigh_r", 51: "calf_r", 52: "thigh_twist_r",
+        53: "foot_r", 54: "toe_r", 55: "back_l", 56: "back_r", 57: "camera_target",
+        58: "biceps_twist_l", 59: "biceps_twist_r"
+    };
+    const NAME_TO_ID = Object.entries(BONE_MAP).reduce((acc, [id, name]) => {
+        acc[name] = parseInt(id);
+        return acc;
+    }, {});
+
+    // ==========================================
+    // 2. THREE.JS BOILERPLATE
+    // ==========================================
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x222222);
+    const gridHelper = new THREE.GridHelper(500, 50, 0x444444, 0x555555);
+    scene.add(gridHelper);
+    const axesHelper = new THREE.AxesHelper(30);
+    scene.add(axesHelper);
+    
+    // Removed lights as we are switching to MeshBasicMaterial (Solid/Flat color)
+    // This helps performance and ensures colors are exactly as defined (no gradients).
+
+    const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 2000);
+    camera.position.set(0, 150, 350);
+    camera.lookAt(0, 100, 0);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    document.getElementById('container').appendChild(renderer.domElement);
+
+    const controls = new THREE.OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.05;
+    controls.target.set(-105, 80, -7); 
+
+    window.addEventListener('resize', () => {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    // ==========================================
+    // 3. STATE MANAGEMENT
+    // ==========================================
+    
+    // MAIN SKELETON STATE
+    let boneIdMap = {};
+    let rootGroup = null;
+    let skeletonHelper = null;
+    let initialGlobalTransforms = {};
+    let allBoneNames = []; 
+    let currentSelectedBoneID = null; 
+    let isUserTyping = false; 
+
+    // REFERENCE SKELETON STATE
+    let refBoneIdMap = {};
+    let refRootGroup = null;
+    let refSkeletonHelper = null;
+
+    // COLORS (UPDATED TO SOLID / HIGH CONTRAST)
+    const MAIN_COLOR_DEFAULT = 0x2196F3; // Solid Blue
+    const MAIN_COLOR_SELECT = 0xFF00FF;  // Magenta
+    const REF_COLOR_DEFAULT = 0xFFEA00;  // Solid Yellow
+    const REF_COLOR_SELECT = 0xFF5722;   // Deep Orange
+
+    // EDIT DATA
+    let userOffsets = {};
+    let userInversions = {};
+
+    // UI References
+    const ui = {
+        bar: document.getElementById('progress-bar'),
+        container: document.getElementById('progress-container'),
+        status: document.getElementById('status'),
+        skeletonStatus: document.getElementById('skeleton-status'),
+        refSkeletonStatus: document.getElementById('ref-skeleton-status'),
+        controls: document.getElementById('anim-controls'),
+        timeline: document.getElementById('timeline'),
+        frameDisplay: document.getElementById('frameDisplay'),
+        playBtn: document.getElementById('playBtn'),
+        speedDisplay: document.getElementById('speedDisplay'),
+        speedInput: document.getElementById('speedInput'),
+        boneSelect: document.getElementById('bone-select'),
+        editorControls: document.getElementById('editor-controls'),
+        resetOffsetsBtn: document.getElementById('reset-offsets-btn'),
+        activeModsContainer: document.getElementById('active-mods-container'),
+        downloadBtn: document.getElementById('downloadBtn'),
+        // Inversion Checks
+        invPos: { x: document.getElementById('invPos-x'), y: document.getElementById('invPos-y'), z: document.getElementById('invPos-z') },
+        invRot: { x: document.getElementById('invRot-x'), y: document.getElementById('invRot-y'), z: document.getElementById('invRot-z'), w: document.getElementById('invRot-w') },
+        // Transform Inputs
+        editPos: { x: document.getElementById('edit-pos-x'), y: document.getElementById('edit-pos-y'), z: document.getElementById('edit-pos-z') },
+        editRot: { x: document.getElementById('edit-rot-x'), y: document.getElementById('edit-rot-y'), z: document.getElementById('edit-rot-z') }
+    };
+
+    // ==========================================
+    // 4. SKELETON PARSING & BUILDING
+    // ==========================================
+    
+    /**
+     * Generic function to parse text and build a skeleton hierarchy.
+     * Returns the root group and the ID map for that skeleton.
+     */
+    function parseSkeleton(text, defaultColor) {
+        const idMap = {};
+        const globalTransforms = {};
+        const localBoneNames = [];
+
+        // Parse Lines
+        const lines = text.split('\n');
+        
+        // Pass 1: Global Transforms
+        lines.forEach(line => {
+            if (!line.trim()) return;
+            const boneMatch = line.match(/"(.*?)"\s*\[(BONE|Group)\]\s*\|\s*G\.Pos:\((.*?)\)\s*\|\s*G\.Rot \(quat\):\((.*?)\)/);
+            if (boneMatch) {
+                const name = boneMatch[1];
+                const posArr = boneMatch[3].split(',').map(Number);
+                const rotArr = boneMatch[4].split(',').map(Number);
+                if (posArr.length === 3 && rotArr.length === 4) {
+                    globalTransforms[name] = {
+                        pos: new THREE.Vector3(posArr[0], posArr[1], posArr[2]),
+                        rot: new THREE.Quaternion(rotArr[0], rotArr[1], rotArr[2], rotArr[3])
+                    };
+                    if (NAME_TO_ID.hasOwnProperty(name)) localBoneNames.push(name);
+                }
+            }
+        });
+
+        // Pass 2: Build Hierarchy
+        const root = new THREE.Group();
+        const stack = []; 
+
+        lines.forEach(line => {
+            if (!line.trim()) return;
+            const leadingSpaces = line.search(/\S/);
+            const level = leadingSpaces / 2;
+            const boneMatch = line.match(/"(.*?)"\s*\[(BONE|Group)\]/);
+            
+            if (boneMatch) {
+                const name = boneMatch[1];
+                if (!globalTransforms[name]) return;
+
+                const bone = new THREE.Bone();
+                bone.name = name;
+                
+                // Visualization Cube
+                const size = name === "pelvis" ? 4 : 1.5;
+                const geometry = new THREE.BoxGeometry(size, size, size);
+                // Use MeshBasicMaterial for solid, flat color without gradient lighting
+                const material = new THREE.MeshBasicMaterial({ color: defaultColor }); 
+                const cube = new THREE.Mesh(geometry, material);
+                bone.add(cube);
+
+                if (NAME_TO_ID.hasOwnProperty(name)) idMap[NAME_TO_ID[name]] = bone;
+
+                // Hierarchy Logic
+                let parentData = null;
+                while (stack.length > 0 && stack[stack.length - 1].level >= level) stack.pop();
+
+                if (stack.length > 0) {
+                    parentData = stack[stack.length - 1];
+                    parentData.bone.add(bone);
+                } else {
+                    root.add(bone);
+                }
+
+                // Initial Pose Logic
+                const myGlobal = globalTransforms[name];
+                const myGlobalMatrix = new THREE.Matrix4();
+                if (myGlobal) myGlobalMatrix.compose(myGlobal.pos, myGlobal.rot, new THREE.Vector3(1,1,1));
+
+                if (parentData && myGlobal) {
+                    const parentGlobalInv = parentData.globalMatrix.clone().invert();
+                    const localMatrix = parentGlobalInv.multiply(myGlobalMatrix);
+                    const localPos = new THREE.Vector3(); const localRot = new THREE.Quaternion(); const localScale = new THREE.Vector3();
+                    localMatrix.decompose(localPos, localRot, localScale);
+                    bone.position.copy(localPos);
+                    bone.quaternion.copy(localRot);
+                } else if (myGlobal) {
+                    bone.position.copy(myGlobal.pos);
+                    bone.quaternion.copy(myGlobal.rot);
+                }
+
+                stack.push({ bone: bone, level: level, globalMatrix: myGlobalMatrix });
+            }
+        });
+
+        return { root, idMap, localBoneNames, globalTransforms };
+    }
+
+    // --- MAIN SKELETON LOADER ---
+    document.getElementById('skeletonInput').addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+            const text = ev.target.result;
+            
+            // Clean up old main skeleton
+            if (skeletonHelper) { scene.remove(skeletonHelper); skeletonHelper = null; }
+            if (rootGroup) { scene.remove(rootGroup); rootGroup = null; }
+            resetVisuals();
+            currentSelectedBoneID = null; 
+            
+            // Reset Edit Data
+            userOffsets = {}; 
+            userInversions = {};
+            updateActiveModsUI();
+
+            // Build Main Skeleton (Blue)
+            const result = parseSkeleton(text, MAIN_COLOR_DEFAULT);
+            rootGroup = result.root;
+            boneIdMap = result.idMap;
+            allBoneNames = result.localBoneNames;
+            initialGlobalTransforms = result.globalTransforms;
+
+            scene.add(rootGroup);
+            skeletonHelper = new THREE.SkeletonHelper(rootGroup);
+            // Color the helper lines
+            skeletonHelper.material.color.setHex(MAIN_COLOR_DEFAULT);
+            skeletonHelper.material.depthTest = false;
+            skeletonHelper.renderOrder = 999;
+            scene.add(skeletonHelper);
+
+            // UI Updates
+            ui.skeletonStatus.innerText = `Skeleton loaded: ${Object.keys(boneIdMap).length} bones`;
+            ui.skeletonStatus.style.color = "#2196F3"; // Blue
+            document.getElementById('csvInput').disabled = false;
+            ui.status.innerText = "Ready to load animation CSV";
+            populateBoneDropdown();
+        };
+        reader.readAsText(file);
+    });
+
+    // --- REFERENCE SKELETON LOADER ---
+    document.getElementById('refSkeletonInput').addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+            const text = ev.target.result;
+
+            // Clean up old ref skeleton
+            if (refSkeletonHelper) { scene.remove(refSkeletonHelper); refSkeletonHelper = null; }
+            if (refRootGroup) { scene.remove(refRootGroup); refRootGroup = null; }
+
+            // Build Reference Skeleton (Yellow)
+            const result = parseSkeleton(text, REF_COLOR_DEFAULT);
+            refRootGroup = result.root;
+            refBoneIdMap = result.idMap;
+
+            // Add to scene
+            scene.add(refRootGroup);
+            
+            // Ref Skeleton Helper
+            refSkeletonHelper = new THREE.SkeletonHelper(refRootGroup);
+            refSkeletonHelper.material.linewidth = 2; 
+            refSkeletonHelper.material.depthTest = false; 
+            refSkeletonHelper.material.color.setHex(REF_COLOR_DEFAULT);
+            refSkeletonHelper.renderOrder = 998;
+            scene.add(refSkeletonHelper);
+
+            ui.refSkeletonStatus.innerText = "Reference Skeleton Loaded (Yellow)";
+            ui.refSkeletonStatus.style.color = "#FFEA00"; // Yellow
+
+            if (currentSelectedBoneID !== null) {
+                highlightBone(currentSelectedBoneID);
+            }
+        };
+        reader.readAsText(file);
+    });
+
+    // ==========================================
+    // 5. HELPER FUNCTIONS
+    // ==========================================
+
+    function populateBoneDropdown() {
+        const select = ui.boneSelect;
+        select.innerHTML = '<option value="">--- Select a Bone to Edit ---</option>';
+        allBoneNames.forEach(name => {
+            const id = NAME_TO_ID[name];
+            const option = document.createElement('option');
+            option.value = id;
+            option.innerText = `${name} (ID: ${id})`;
+            select.appendChild(option);
+        });
+        ui.editorControls.style.display = 'none';
+    }
+
+    function resetVisuals() {
+        // Reset Main Skeleton
+        Object.values(boneIdMap).forEach(bone => {
+             const mesh = bone.children.find(c => c.isMesh);
+             if (mesh) {
+                mesh.material.color.setHex(MAIN_COLOR_DEFAULT);
+                mesh.scale.set(1, 1, 1);
+             }
+        });
+        // Reset Reference Skeleton
+        Object.values(refBoneIdMap).forEach(bone => {
+             const mesh = bone.children.find(c => c.isMesh);
+             if (mesh) {
+                mesh.material.color.setHex(REF_COLOR_DEFAULT);
+                mesh.scale.set(1, 1, 1);
+             }
+        });
+    }
+
+    function highlightBone(id) {
+        // 1. Reset all colors/scales first
+        resetVisuals();
+
+        // 2. Highlight Main Skeleton Bone (Magenta, 3x scale)
+        if (boneIdMap[id]) {
+            const mesh = boneIdMap[id].children.find(c => c.isMesh);
+            if(mesh) {
+                mesh.material.color.setHex(MAIN_COLOR_SELECT);
+                mesh.scale.set(3, 3, 3); // SCALED 3x
+            }
+        }
+
+        // 3. Highlight Reference Skeleton Bone (Orange, 3x scale)
+        if (refBoneIdMap[id]) {
+            const mesh = refBoneIdMap[id].children.find(c => c.isMesh);
+            if(mesh) {
+                mesh.material.color.setHex(REF_COLOR_SELECT);
+                mesh.scale.set(3, 3, 3); // SCALED 3x
+            }
+        }
+    }
+
+    // ==========================================
+    // 6. ANIMATION & PARSING
+    // ==========================================
+    const animData = {}; 
+    let maxLoadedFrame = 0;
+    let isPlaying = false;
+    let playbackFrame = 1;
+    let playbackSpeed = 30;
+    let lastTime = 0;
+
+    document.getElementById('csvInput').addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        for (let key in animData) delete animData[key];
+        maxLoadedFrame = 0; isPlaying = false;
+        ui.container.style.display = 'block'; ui.bar.style.width = '0%';
+        ui.status.innerText = "Parsing Animation...";
+        Papa.parse(file, {
+            header: true, dynamicTyping: true, worker: true, skipEmptyLines: true,
+            step: function(results) {
+                const row = results.data;
+                const f = row.frame_number; const bid = row.bone_id;
+                if (typeof f === 'number' && typeof bid === 'number') {
+                    if (f > maxLoadedFrame) maxLoadedFrame = f;
+                    if (!animData[f]) animData[f] = [];
+                    animData[f].push({
+                        id: bid,
+                        px: row.position_x, py: row.position_y, pz: row.position_z,
+                        rx: row.rotation_x, ry: row.rotation_y, rz: row.rotation_z, rw: row.rotation_w
+                    });
+                }
+            },
+            complete: function() {
+                ui.bar.style.width = '100%';
+                ui.status.innerText = `Done! ${maxLoadedFrame} frames.`;
+                ui.status.style.color = "#4CAF50";
+                ui.controls.style.display = 'flex';
+                ui.timeline.max = maxLoadedFrame; ui.timeline.value = 1;
+                isPlaying = true;
+                updatePlayBtn();
+            }
+        });
+    });
+
+    // ==========================================
+    // 7. ANIMATION LOGIC & OFFSET APPLICATION
+    // ==========================================
+    function radToDeg(rad) { return rad * (180 / Math.PI); }
+    function degToRad(deg) { return deg * (Math.PI / 180); }
+
+    function applyFrame(frameIndex) {
+        if (!animData[frameIndex] || !rootGroup) return;
+        const frameBones = animData[frameIndex];
+
+        // ONLY apply to MAIN skeleton (boneIdMap). Reference skeleton is ignored.
+        for(let i = 0; i < frameBones.length; i++) {
+            const data = frameBones[i];
+            const bone = boneIdMap[data.id];
+            
+            if (bone) {
+                const inv = userInversions[data.id] || { pos: {}, rot: {} };
+                const offset = userOffsets[data.id] || { pos: {x:0, y:0, z:0}, rot: {x:0, y:0, z:0} };
+
+                // 1. Base Position from CSV
+                let px = data.px; let py = data.py; let pz = data.pz;
+                // 2. Apply Inversion
+                if (inv.pos.x) px *= -1;
+                if (inv.pos.y) py *= -1;
+                if (inv.pos.z) pz *= -1;
+                // 3. Apply User Offset (Additive)
+                px += offset.pos.x;
+                py += offset.pos.y;
+                pz += offset.pos.z;
+                
+                // Safety check for NaN
+                if (!isNaN(px)) bone.position.x = px;
+                if (!isNaN(py)) bone.position.y = py;
+                if (!isNaN(pz)) bone.position.z = pz;
+
+                // 1. Base Rotation from CSV
+                let rx = data.rx; let ry = data.ry; let rz = data.rz; let rw = data.rw;
+                // 2. Apply Inversion
+                if (inv.rot.x) rx *= -1;
+                if (inv.rot.y) ry *= -1;
+                if (inv.rot.z) rz *= -1;
+                if (inv.rot.w) rw *= -1;
+                
+                const baseQuat = new THREE.Quaternion(rx, ry, rz, rw);
+                // 3. Convert to Euler for Offset Calculation
+                const baseEuler = new THREE.Euler().setFromQuaternion(baseQuat);
+                
+                // 4. Add User Offset
+                const finalEuler = new THREE.Euler(
+                    baseEuler.x + degToRad(offset.rot.x),
+                    baseEuler.y + degToRad(offset.rot.y),
+                    baseEuler.z + degToRad(offset.rot.z),
+                    'XYZ'
+                );
+                bone.quaternion.setFromEuler(finalEuler);
+            }
+        }
+        rootGroup.updateMatrixWorld(true);
+
+        // Update UI logic
+        ui.timeline.value = frameIndex;
+        ui.frameDisplay.innerText = `Frame: ${frameIndex}`;
+        playbackFrame = frameIndex;
+
+        // If a bone is selected, update the input boxes to show CURRENT values
+        if (currentSelectedBoneID !== null && !isUserTyping) {
+             updateInputsFromScene(currentSelectedBoneID);
+        }
+    }
+
+    function updateInputsFromScene(boneId) {
+        const bone = boneIdMap[boneId];
+        if(!bone) return;
+        ui.editPos.x.value = parseFloat(bone.position.x).toFixed(2);
+        ui.editPos.y.value = parseFloat(bone.position.y).toFixed(2);
+        ui.editPos.z.value = parseFloat(bone.position.z).toFixed(2);
+        const euler = new THREE.Euler().setFromQuaternion(bone.quaternion);
+        ui.editRot.x.value = Math.round(radToDeg(euler.x));
+        ui.editRot.y.value = Math.round(radToDeg(euler.y));
+        ui.editRot.z.value = Math.round(radToDeg(euler.z));
+    }
+
+    // ==========================================
+    // 8. USER INTERACTION LOGIC
+    // ==========================================
+    
+    // Handle Bone Selection
+    ui.boneSelect.addEventListener('change', (e) => {
+        const id = parseInt(e.target.value);
+        if (id || id === 0) {
+            currentSelectedBoneID = id;
+            ui.editorControls.style.display = 'block';
+            
+            // Highlight both Main and Ref
+            highlightBone(id);
+
+            // Sync Checkboxes
+            const inv = userInversions[id] || { pos: {}, rot: {} };
+            ui.invPos.x.checked = !!inv.pos.x; ui.invPos.y.checked = !!inv.pos.y; ui.invPos.z.checked = !!inv.pos.z;
+            ui.invRot.x.checked = !!inv.rot.x; ui.invRot.y.checked = !!inv.rot.y; ui.invRot.z.checked = !!inv.rot.z; ui.invRot.w.checked = !!inv.rot.w;
+            
+            // Trigger an immediate UI update based on the current frame
+            applyFrame(playbackFrame);
+        } else {
+            currentSelectedBoneID = null;
+            resetVisuals();
+            ui.editorControls.style.display = 'none';
+        }
+    });
+
+    // Handle Input Changes (The Core Logic for Editing)
+    function handleTransformInput() {
+        if (currentSelectedBoneID === null) return;
+        const boneId = currentSelectedBoneID;
+        
+        if (!userOffsets[boneId]) userOffsets[boneId] = { pos: {x:0,y:0,z:0}, rot: {x:0,y:0,z:0} };
+
+        // 1. Get the Raw Animation Data for this frame (Base)
+        const frameData = animData[playbackFrame] ? animData[playbackFrame].find(b => b.id === boneId) : null;
+        if (!frameData) return; 
+
+        // 2. Calculate Base + Inversion (What the bone would be without offsets)
+        let basePx = frameData.px; let basePy = frameData.py; let basePz = frameData.pz;
+        const inv = userInversions[boneId] || { pos: {}, rot: {} };
+        if (inv.pos.x) basePx *= -1; if (inv.pos.y) basePy *= -1; if (inv.pos.z) basePz *= -1;
+
+        // 3. Get User Desired Value from Input
+        const targetPx = parseFloat(ui.editPos.x.value) || 0;
+        const targetPy = parseFloat(ui.editPos.y.value) || 0;
+        const targetPz = parseFloat(ui.editPos.z.value) || 0;
+
+        // 4. Calculate Offset = Target - Base
+        userOffsets[boneId].pos.x = targetPx - basePx;
+        userOffsets[boneId].pos.y = targetPy - basePy;
+        userOffsets[boneId].pos.z = targetPz - basePz;
+
+        // 5. Rotation Logic
+        let baseRx = frameData.rx; let baseRy = frameData.ry; let baseRz = frameData.rz; let baseRw = frameData.rw;
+        if (inv.rot.x) baseRx *= -1; if (inv.rot.y) baseRy *= -1; if (inv.rot.z) baseRz *= -1; if (inv.rot.w) baseRw *= -1;
+        
+        const baseQuat = new THREE.Quaternion(baseRx, baseRy, baseRz, baseRw);
+        const baseEuler = new THREE.Euler().setFromQuaternion(baseQuat);
+
+        const targetRxDeg = parseFloat(ui.editRot.x.value) || 0;
+        const targetRyDeg = parseFloat(ui.editRot.y.value) || 0;
+        const targetRzDeg = parseFloat(ui.editRot.z.value) || 0;
+
+        userOffsets[boneId].rot.x = targetRxDeg - radToDeg(baseEuler.x);
+        userOffsets[boneId].rot.y = targetRyDeg - radToDeg(baseEuler.y);
+        userOffsets[boneId].rot.z = targetRzDeg - radToDeg(baseEuler.z);
+
+        updateActiveModsUI();
+        applyFrame(playbackFrame);
+    }
+
+    const allInputs = [...Object.values(ui.editPos), ...Object.values(ui.editRot)];
+    allInputs.forEach(input => {
+        input.addEventListener('focus', () => isUserTyping = true);
+        input.addEventListener('blur', () => isUserTyping = false);
+        input.addEventListener('input', handleTransformInput);
+    });
+
+    function handleInversion() {
+        if (currentSelectedBoneID === null) return;
+        const id = currentSelectedBoneID;
+        if (!userInversions[id]) userInversions[id] = { pos: {}, rot: {} };
+        const inv = userInversions[id];
+        inv.pos.x = ui.invPos.x.checked; inv.pos.y = ui.invPos.y.checked; inv.pos.z = ui.invPos.z.checked;
+        inv.rot.x = ui.invRot.x.checked; inv.rot.y = ui.invRot.y.checked; inv.rot.z = ui.invRot.z.checked; inv.rot.w = ui.invRot.w.checked;
+        
+        updateActiveModsUI();
+        applyFrame(playbackFrame);
+    }
+    [...Object.values(ui.invPos), ...Object.values(ui.invRot)].forEach(cb => {
+        cb.addEventListener('change', handleInversion);
+    });
+
+    ui.resetOffsetsBtn.addEventListener('click', () => {
+        if (currentSelectedBoneID !== null) {
+            delete userOffsets[currentSelectedBoneID];
+            delete userInversions[currentSelectedBoneID];
+            [...Object.values(ui.invPos), ...Object.values(ui.invRot)].forEach(cb => cb.checked = false);
+            updateActiveModsUI();
+            applyFrame(playbackFrame);
+        }
+    });
+
+    function updateActiveModsUI() {
+        const container = ui.activeModsContainer;
+        container.innerHTML = ''; 
+        const activeIDs = new Set([...Object.keys(userOffsets), ...Object.keys(userInversions)]);
+        activeIDs.forEach(idStr => {
+            const id = parseInt(idStr);
+            const name = BONE_MAP[id];
+            
+            const hasOff = userOffsets[id];
+            const hasInv = userInversions[id];
+            let isModified = false;
+            
+            if(hasInv) {
+                if(Object.values(hasInv.pos).some(x=>x) || Object.values(hasInv.rot).some(x=>x)) isModified = true;
+            }
+            if(hasOff) {
+                if(Math.abs(hasOff.pos.x)>0.001 || Math.abs(hasOff.pos.y)>0.001 || Math.abs(hasOff.pos.z)>0.001) isModified = true;
+                if(Math.abs(hasOff.rot.x)>0.001 || Math.abs(hasOff.rot.y)>0.001 || Math.abs(hasOff.rot.z)>0.001) isModified = true;
+            }
+
+            if(isModified) {
+                const div = document.createElement('div');
+                div.className = 'mod-box';
+                div.innerHTML = `
+                    <span style="color: #4CAF50; font-weight: bold; margin-right:5px;">${name}</span>
+                    <span style="color: #aaa;">(Modified)</span>
+                    <button style="margin-left:auto; padding:2px 6px; background:#f44336; font-size:10px;" onclick="removeMod(${id})">x</button>
+                `;
+                container.appendChild(div);
+            }
+        });
+    }
+
+    window.removeMod = function(id) {
+        delete userOffsets[id];
+        delete userInversions[id];
+        if(currentSelectedBoneID === id) {
+            [...Object.values(ui.invPos), ...Object.values(ui.invRot)].forEach(cb => cb.checked = false);
+        }
+        updateActiveModsUI();
+        applyFrame(playbackFrame);
+    };
+
+    // ==========================================
+    // 9. EXPORT / DOWNLOAD LOGIC
+    // ==========================================
+    ui.downloadBtn.addEventListener('click', () => {
+        if (!rootGroup) {
+            alert("No main skeleton to export!");
+            return;
+        }
+        
+        let outputText = "";
+
+        function traverseExport(obj, level) {
+            if (obj.isBone || (obj.isGroup && level === 0)) {
+                const indent = "  ".repeat(level);
+                
+                const wPos = new THREE.Vector3();
+                obj.getWorldPosition(wPos);
+                
+                const wQuat = new THREE.Quaternion();
+                obj.getWorldQuaternion(wQuat);
+
+                const posStr = `${wPos.x.toFixed(6)},${wPos.y.toFixed(6)},${wPos.z.toFixed(6)}`;
+                const rotStr = `${wQuat.x.toFixed(6)},${wQuat.y.toFixed(6)},${wQuat.z.toFixed(6)},${wQuat.w.toFixed(6)}`;
+                
+                const line = `${indent}"${obj.name}" [BONE] | G.Pos:(${posStr}) | G.Rot (quat):(${rotStr})`;
+                outputText += line + "\n";
+            }
+            
+            if (obj.children) {
+                obj.children.forEach(child => {
+                    if (child.type === 'Bone' || child.type === 'Group') {
+                        traverseExport(child, level + 1);
+                    }
+                });
+            }
+        }
+
+        rootGroup.children.forEach(child => traverseExport(child, 0));
+
+        const blob = new window.Blob([outputText], { type: 'text/plain' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `skeleton_modified_frame_${playbackFrame}.txt`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+    });
+
+    // ==========================================
+    // 10. RENDER LOOP
+    // ==========================================
+    ui.playBtn.addEventListener('click', () => { isPlaying = !isPlaying; updatePlayBtn(); });
+    function updatePlayBtn() { ui.playBtn.innerText = isPlaying ? "Pause" : "Play"; ui.playBtn.style.background = isPlaying ? "#f44336" : "#4CAF50"; }
+    
+    ui.timeline.addEventListener('input', (e) => { 
+        const f = parseInt(e.target.value); 
+        applyFrame(f); 
+        if(isPlaying) { isPlaying = false; updatePlayBtn(); }
+    });
+    
+    ui.speedInput.addEventListener('input', (e) => { playbackSpeed = parseInt(e.target.value); ui.speedDisplay.innerText = `${playbackSpeed} FPS`; });
+
+    function animate(time) {
+        requestAnimationFrame(animate);
+        controls.update();
+        if (isPlaying && maxLoadedFrame > 0 && rootGroup) {
+            const interval = 1000 / playbackSpeed;
+            if (time - lastTime > interval) {
+                lastTime = time;
+                playbackFrame++;
+                if (playbackFrame > maxLoadedFrame) playbackFrame = 1; 
+                applyFrame(playbackFrame);
+            }
+        }
+        
+        // Safety checks before updating helpers to prevent log spam
+        if (skeletonHelper && rootGroup) skeletonHelper.update();
+        if (refSkeletonHelper && refRootGroup) refSkeletonHelper.update();
+
+        renderer.render(scene, camera);
+    }
+    animate(0);
+</script>
+<script type="module" src="/index.tsx"></script>
+</body>
+</html>
