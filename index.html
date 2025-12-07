@@ -158,7 +158,8 @@
                 }
                 return (s ? -1 : 1) * Math.pow(2, e - 15) * (1 + f / Math.pow(2, 10));
             }
-            // FIXED: Added sign bit handling for reconstructed component
+            
+            // FIXED: Removed sign bit logic. Reconstructed component (d) is always positive.
             parseCompressedQuaternion(v0, v1, v2) {
                 const scale = 1.0 / 32767.0;
                 const maxValue = 1.4142135;
@@ -167,8 +168,8 @@
                 // Extract which component was omitted (bits 13-14)
                 const missing = (v0 >> 13) & 3;
                 
-                // Extract sign bit (bit 15) - determines sign of reconstructed component
-                const signBit = (v0 >> 15) & 1;
+                // NOTE: Bit 15 is ignored. In standard smallest-3 compression, 
+                // the omitted component is ALWAYS positive.
                 
                 // Calculate the three stored components
                 const a = ((v1 >> 14) + 4 * (v0 & 0x1FFF)) * scale * maxValue - shift;
@@ -177,12 +178,9 @@
                 
                 // Calculate the reconstructed (omitted) component
                 const dSquared = 1.0 - (a*a + b*b + c*c);
-                let d = dSquared > 0 ? Math.sqrt(dSquared) : 0;
                 
-                // Apply sign based on sign bit
-                if (signBit === 1) {
-                    d = -d;
-                }
+                // d is always positive sqRoot
+                const d = dSquared > 0 ? Math.sqrt(dSquared) : 0;
                 
                 // Reorder components based on which one was omitted
                 switch (missing) {
@@ -193,6 +191,7 @@
                     default: return [1, 0, 0, 0];
                 }
             }
+
             async parseAnimationData(arrayBuffer) {
                 try {
                     const dataView = new DataView(arrayBuffer);
