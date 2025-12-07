@@ -86,7 +86,7 @@
             background-color: #dfd;
             color: #27ae60;
             border: 1px solid #27ae60;
-            text-align: left; /* Adjust for better list display */
+            text-align: left;
         }
         .loading {
             margin-top: 20px;
@@ -158,8 +158,8 @@
                 }
                 return (s ? -1 : 1) * Math.pow(2, e - 15) * (1 + f / Math.pow(2, 10));
             }
-            
-            // FIXED: Removed sign bit logic. Reconstructed component (d) is always positive.
+
+            // FIXED: Corrected mapping for W-first component order (Capcom/MT Framework style)
             parseCompressedQuaternion(v0, v1, v2) {
                 const scale = 1.0 / 32767.0;
                 const maxValue = 1.4142135;
@@ -168,27 +168,41 @@
                 // Extract which component was omitted (bits 13-14)
                 const missing = (v0 >> 13) & 3;
                 
-                // NOTE: Bit 15 is ignored. In standard smallest-3 compression, 
-                // the omitted component is ALWAYS positive.
-                
                 // Calculate the three stored components
                 const a = ((v1 >> 14) + 4 * (v0 & 0x1FFF)) * scale * maxValue - shift;
                 const b = ((v2 >> 15) + 2 * (v1 & 0x3FFF)) * scale * maxValue - shift;
                 const c = (v2 & 0x7FFF) * scale * maxValue - shift;
                 
-                // Calculate the reconstructed (omitted) component
+                // Calculate the reconstructed (omitted) component (d)
                 const dSquared = 1.0 - (a*a + b*b + c*c);
-                
-                // d is always positive sqRoot
                 const d = dSquared > 0 ? Math.sqrt(dSquared) : 0;
                 
-                // Reorder components based on which one was omitted
+                // RE-MAPPING:
+                // Assuming internal storage is [W, X, Y, Z] (Index 0 = W)
+                // We must return [X, Y, Z, W] for the CSV to work correctly.
+                
                 switch (missing) {
-                    case 0: return [d, a, b, c]; // W was omitted, return [W, X, Y, Z]
-                    case 1: return [a, d, b, c]; // X was omitted, return [X, W, Y, Z]
-                    case 2: return [a, b, d, c]; // Y was omitted, return [X, Y, W, Z]
-                    case 3: return [a, b, c, d]; // Z was omitted, return [X, Y, Z, W]
-                    default: return [1, 0, 0, 0];
+                    case 0: 
+                        // W is missing (calculated as d). Stored are X, Y, Z (a, b, c).
+                        // Return [X, Y, Z, W] -> [a, b, c, d]
+                        return [a, b, c, d]; 
+                        
+                    case 1: 
+                        // X is missing (calculated as d). Stored are W, Y, Z (a, b, c).
+                        // Return [X, Y, Z, W] -> [d, b, c, a]
+                        return [d, b, c, a];
+                        
+                    case 2: 
+                        // Y is missing (calculated as d). Stored are W, X, Z (a, b, c).
+                        // Return [X, Y, Z, W] -> [b, d, c, a]
+                        return [b, d, c, a];
+                        
+                    case 3: 
+                        // Z is missing (calculated as d). Stored are W, X, Y (a, b, c).
+                        // Return [X, Y, Z, W] -> [b, c, d, a]
+                        return [b, c, d, a];
+                        
+                    default: return [0, 0, 0, 1];
                 }
             }
 
