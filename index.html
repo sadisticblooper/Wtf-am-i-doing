@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SF3 Animation Data Diddler</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f4f4f4;
+            color: #333;
+            padding: 20px;
+            text-align: center;
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            background: #fff;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+        }
+        h1 {
+            color: #2c3e50;
+            margin-bottom: 20px;
+        }
+        .upload-section {
+            border: 2px dashed #ccc;
+            padding: 30px;
+            margin-bottom: 20px;
+            border-radius: 8px;
+        }
+        #fileInput {
+            display: none;
+        }
+        .file-label {
+            background-color: #3498db;
+            color: white;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+            display: inline-block;
+            transition: background-color 0.3s;
+        }
+        .file-label:hover {
+            background-color: #2980b9;
+        }
+        .selected-file {
+            margin-top: 15px;
+            font-style: italic;
+            color: #555;
+            display: block;
+        }
+        #exportAllButton {
+            background-color: #2ecc71;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            font-size: 1em;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background-color 0.3s;
+            margin-top: 10px;
+        }
+        #exportAllButton:hover:not(:disabled) {
+            background-color: #27ae60;
+        }
+        #exportAllButton:disabled {
+            background-color: #bdc3c7;
+            cursor: not-allowed;
+        }
+        .message {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 5px;
+            font-weight: bold;
+        }
+        .error {
+            background-color: #fdd;
+            color: #c0392b;
+            border: 1px solid #c0392b;
+        }
+        .success {
+            background-color: #dfd;
+            color: #27ae60;
+            border: 1px solid #27ae60;
+            text-align: left; /* Adjust for better list display */
+        }
+        .loading {
+            margin-top: 20px;
+            font-style: italic;
+        }
+        .bone-list {
+            list-style-type: none;
+            padding: 0;
+            margin: 10px 0;
+            max-height: 100px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            padding: 5px;
+        }
+        .bone-list li {
+            margin-bottom: 3px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>SF3 Animation Data Extractor</h1>
+        <p>Upload your shit.</p>
+        <div class="upload-section">
+            <label for="fileInput" class="file-label">
+                📂 Choose Animation File (.bytes)
+            </label>
+            <input type="file" id="fileInput" accept=".bin,.dat,.anim">
+            <span id="selectedFileName" class="selected-file">No file selected.</span>
+            <button id="exportAllButton" disabled>Export All Frames Data (CSV)</button>
+        </div>
+        <div id="loading" class="loading" style="display:none;">
+            Parsing...
+        </div>
+        <div id="errorMessage" class="message error" style="display:none;"></div>
+        <div id="successMessage" class="message success" style="display:none;"></div>
+    </div>
+    <script>
+        // --- BONE MAP from bone-map.js ---
+        const BONE_MAP = {
+            0: "pelvis", 1: "stomach", 2: "chest", 3: "neck", 4: "head", 5: "hair", 6: "hair1",
+            7: "zero_joint_hand_l", 8: "clavicle_l", 9: "arm_l", 10: "forearm_l",
+            11: "forearm_twist_l", 12: "hand_l", 13: "weapon_l", 14: "f_big1_l", 15: "f_big2_l", 16: "f_big3_l",
+            17: "f_main1_l", 18: "f_main2_l", 19: "f_main3_l", 20: "f_pointer1_l", 21: "f_pointer2_l", 22: "f_pointer3_l",
+            23: "scapular_l", 24: "chest_l", 25: "zero_joint_hand_r", 26: "clavicle_r", 27: "arm_r", 28: "forearm_r",
+            29: "forearm_twist_r", 30: "hand_r", 31: "weapons_r", 32: "f_big1_r", 33: "f_big2_r", 34: "f_big3_r",
+            35: "f_main1_r", 36: "f_main2_r", 37: "f_main3_r", 38: "f_pointer1_r", 39: "f_pointer2_r", 40: "f_pointer3_r",
+            41: "scapular_r", 42: "chest_r", 43: "zero_joint_pelvis_l", 44: "thigh_l", 45: "calf_l", 46: "foot_l",
+            47: "toe_l", 48: "back_l", 49: "chest_h_49", 50: "stomach_h_50",
+            51: "zero_joint_pelvis_r", 52: "thigh_r", 53: "calf_r", 54: "foot_r", 55: "toe_r", 56: "back_r",
+            57: "biceps_twist_l", 58: "biceps_twist_r", 59: "thigh_twist_l", 60: "thigh_twist_r",
+            61: "foot_r_extra", 62: "toe_r_extra", 63: "weapon_r_extra", 64: "weapon_l_extra", 65: "root_extra",
+        };
+
+        // --- guts---
+        class AnimationParser {
+            constructor() {
+                this.animationData = null;
+                this.boneIds = [];
+            }
+            halfToFloat(h) {
+                const s = (h & 0x8000) >> 15;
+                const e = (h & 0x7C00) >> 10;
+                const f = h & 0x03FF;
+                if (e === 0) {
+                    return (s ? -1 : 1) * Math.pow(2, -14) * (f / Math.pow(2, 10));
+                } else if (e === 0x1F) {
+                    return f ? NaN : ((s ? -1 : 1) * Infinity);
+                }
+                return (s ? -1 : 1) * Math.pow(2, e - 15) * (1 + f / Math.pow(2, 10));
+            }
+            // FIXED: Added sign bit handling for reconstructed component
+            parseCompressedQuaternion(v0, v1, v2) {
+                const scale = 1.0 / 32767.0;
+                const maxValue = 1.4142135;
+                const shift = 0.70710677;
+                
+                // Extract which component was omitted (bits 13-14)
+                const missing = (v0 >> 13) & 3;
+                
+                // Extract sign bit (bit 15) - determines sign of reconstructed component
+                const signBit = (v0 >> 15) & 1;
+                
+                // Calculate the three stored components
+                const a = ((v1 >> 14) + 4 * (v0 & 0x1FFF)) * scale * maxValue - shift;
+                const b = ((v2 >> 15) + 2 * (v1 & 0x3FFF)) * scale * maxValue - shift;
+                const c = (v2 & 0x7FFF) * scale * maxValue - shift;
+                
+                // Calculate the reconstructed (omitted) component
+                const dSquared = 1.0 - (a*a + b*b + c*c);
+                let d = dSquared > 0 ? Math.sqrt(dSquared) : 0;
+                
+                // Apply sign based on sign bit
+                if (signBit === 1) {
+                    d = -d;
+                }
+                
+                // Reorder components based on which one was omitted
+                switch (missing) {
+                    case 0: return [d, a, b, c]; // W was omitted, return [W, X, Y, Z]
+                    case 1: return [a, d, b, c]; // X was omitted, return [X, W, Y, Z]
+                    case 2: return [a, b, d, c]; // Y was omitted, return [X, Y, W, Z]
+                    case 3: return [a, b, c, d]; // Z was omitted, return [X, Y, Z, W]
+                    default: return [1, 0, 0, 0];
+                }
+            }
+            async parseAnimationData(arrayBuffer) {
+                try {
+                    const dataView = new DataView(arrayBuffer);
+                    let offset = 0;
+                    const header = dataView.getBigInt64(offset, true);
+                    offset += 8;
+                    if (header !== 457546134634734n) {
+                        throw new Error('Invalid animation file format');
+                    }
+                    const arrayCount = dataView.getInt16(offset, true);
+                    offset += 2;
+                    offset += arrayCount * 8;
+                    const framesCount = dataView.getInt32(offset, true);
+                    offset += 4;
+                    const bonesCount = dataView.getInt32(offset, true);
+                    offset += 4;
+                    this.boneIds = [];
+                    for (let i = 0; i < bonesCount; i++) {
+                        this.boneIds.push(dataView.getInt16(offset, true));
+                        offset += 2;
+                    }
+                    const frames = [];
+                    for (let frameIndex = 0; frameIndex < framesCount; frameIndex++) {
+                        const frame = {
+                            bones: []
+                        };
+                        for (let boneIndex = 0; boneIndex < bonesCount; boneIndex++) {
+                            const px = dataView.getUint16(offset, true); offset += 2;
+                            const py = dataView.getUint16(offset, true); offset += 2;
+                            const pz = dataView.getUint16(offset, true); offset += 2;
+                            const v0 = dataView.getUint16(offset, true); offset += 2;
+                            const v1 = dataView.getUint16(offset, true); offset += 2;
+                            const v2 = dataView.getUint16(offset, true); offset += 2;
+                            const position = [
+                                this.halfToFloat(px),
+                                this.halfToFloat(py),
+                                this.halfToFloat(pz)
+                            ];
+                            
+                            const rotation = this.parseCompressedQuaternion(v0, v1, v2);
+                            frame.bones.push({
+                                boneId: this.boneIds[boneIndex],
+                                position: position,
+                                rotation: rotation
+                            });
+                        }
+                        frames.push(frame);
+                    }
+                    this.animationData = {
+                        frames: frames,
+                        framesCount: framesCount,
+                        bonesCount: bonesCount,
+                        boneIds: this.boneIds
+                    };
+                    return this.animationData;
+                } catch (error) {
+                    console.error('Error parsing animation:', error);
+                    throw error;
+                }
+            }
+            getAllAnimationDataCSV() {
+                if (!this.animationData) return '';
+                const csvRows = ['bone_id,bone_name,frame_number,position_x,position_y,position_z,rotation_x,rotation_y,rotation_z,rotation_w'];
+                for (let frameIndex = 0; frameIndex < this.animationData.framesCount; frameIndex++) {
+                    const frame = this.animationData.frames[frameIndex];
+                    const frameNumber = frameIndex + 1;
+                    // Sort bones by ID for a consistent export order
+                    const sortedBones = [...frame.bones].sort((a, b) => a.boneId - b.boneId);
+                    for (const bone of sortedBones) {
+                        const boneName = BONE_MAP[bone.boneId] || `bone_${bone.boneId}`; // Use BONE_MAP
+                        const [qX, qY, qZ, qW] = bone.rotation;
+                        
+                        const row = [
+                            bone.boneId,
+                            boneName, // Insert bone name
+                            frameNumber,
+                            bone.position[0].toFixed(6),
+                            bone.position[1].toFixed(6),
+                            bone.position[2].toFixed(6),
+                            qX.toFixed(6),
+                            qY.toFixed(6),
+                            qZ.toFixed(6),
+                            qW.toFixed(6)
+                        ];
+                        csvRows.push(row.join(','));
+                    }
+                }
+                return csvRows.join('\n');
+            }
+        }
+        // --- UI ---
+        class SimpleExtractor {
+            constructor() {
+                this.parser = new AnimationParser();
+                this.file = null;
+                this.initEventListeners();
+            }
+            initEventListeners() {
+                const fileInput = document.getElementById('fileInput');
+                const exportAllButton = document.getElementById('exportAllButton');
+                fileInput.addEventListener('change', (e) => {
+                    this.file = e.target.files[0];
+                    if (this.file) {
+                        document.getElementById('selectedFileName').textContent = `Selected: ${this.file.name}`;
+                        this.loadAndProcessAnimation();
+                    } else {
+                        document.getElementById('selectedFileName').textContent = 'No file selected.';
+                        exportAllButton.disabled = true;
+                    }
+                    this.hideMessages();
+                });
+                exportAllButton.addEventListener('click', () => this.exportAllFrames());
+            }
+            async loadAndProcessAnimation() {
+                if (!this.file) return;
+                this.showLoading(true);
+                this.hideMessages();
+                try {
+                    const arrayBuffer = await this.file.arrayBuffer();
+                    await this.parser.parseAnimationData(arrayBuffer);
+                    
+                    const boneListHtml = this.parser.animationData.boneIds
+                        .map(id => `<li>ID ${id}: ${BONE_MAP[id] || `(Unknown bone_${id})`}</li>`)
+                        .join('');
+                    
+                    const successMessage = `
+                        <p>✅ Animation successfully parsed.</p>
+                        <p>**Frames:** ${this.parser.animationData.framesCount}</p>
+                        <p>**Bones Found (${this.parser.animationData.bonesCount}):**</p>
+                        <ul class="bone-list">${boneListHtml}</ul>
+                        <p>The CSV export will now contain **bone names** and have sorted bone IDs.</p>
+                    `;
+
+                    this.showSuccess(successMessage);
+                    document.getElementById('exportAllButton').disabled = false;
+                } catch (error) {
+                    this.showError(`❌ Error processing animation: ${error.message}`);
+                    document.getElementById('exportAllButton').disabled = true;
+                    console.error(error);
+                } finally {
+                    this.showLoading(false);
+                }
+            }
+            exportAllFrames() {
+                if (!this.parser.animationData) {
+                    this.showError('No animation data loaded');
+                    return;
+                }
+                const data = this.parser.getAllAnimationDataCSV();
+                const filename = `${this.file.name.replace(/\.[^/.]+$/, "")}_all_frames_sorted_named.csv`; // Updated filename
+                const mimeType = 'text/csv';
+                if (!data) {
+                    this.showError('Could not generate export data');
+                    return;
+                }
+                this.downloadFile(data, filename, mimeType);
+                this.showSuccess(`⬇️ Exported all ${this.parser.animationData.framesCount} frames to **${filename}**!`);
+                setTimeout(() => this.hideMessages(), 5000); // Keep success message for download a bit longer
+            }
+            downloadFile(data, filename, mimeType) {
+                const blob = new Blob([data], { type: mimeType });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            }
+            showLoading(show) {
+                document.getElementById('loading').style.display = show ? 'block' : 'none';
+            }
+            showMessage(id, message, isHtml) {
+                const div = document.getElementById(id);
+                if (isHtml) {
+                    div.innerHTML = message;
+                } else {
+                    div.textContent = message;
+                }
+            }
+            showError(message) {
+                this.showMessage('errorMessage', message, false);
+                document.getElementById('errorMessage').style.display = 'block';
+                document.getElementById('successMessage').style.display = 'none';
+            }
+            showSuccess(message) {
+                this.showMessage('successMessage', message, true); // Use innerHTML for bone list
+                document.getElementById('successMessage').style.display = 'block';
+                document.getElementById('errorMessage').style.display = 'none';
+            }
+            hideMessages() {
+                document.getElementById('errorMessage').style.display = 'none';
+                document.getElementById('successMessage').style.display = 'none';
+            }
+        }
+        document.addEventListener('DOMContentLoaded', () => {
+            const extractor = new SimpleExtractor();
+        });
+    </script>
+</body>
+</html>
