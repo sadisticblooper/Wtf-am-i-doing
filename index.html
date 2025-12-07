@@ -209,18 +209,11 @@
                     offset += 4;
                     const bonesCount = dataView.getInt32(offset, true);
                     offset += 4;
-                    
-                    // 1. Read bone IDs in Header order (e.g., [0, 47, 4])
                     this.boneIds = [];
                     for (let i = 0; i < bonesCount; i++) {
                         this.boneIds.push(dataView.getInt16(offset, true));
                         offset += 2;
                     }
-                    
-                    // 2. FIX IMPLEMENTATION: Create a numerically sorted list of bone IDs.
-                    // This new list matches the expected data chunk order (e.g., [0, 4, 47]).
-                    const dataAssignmentBoneIds = [...this.boneIds].sort((a, b) => a - b);
-                    
                     const frames = [];
                     for (let frameIndex = 0; frameIndex < framesCount; frameIndex++) {
                         const frame = {
@@ -241,8 +234,7 @@
                             
                             const rotation = this.parseCompressedQuaternion(v0, v1, v2);
                             frame.bones.push({
-                                // 3. Use the numerically sorted ID for assignment!
-                                boneId: dataAssignmentBoneIds[boneIndex], 
+                                boneId: this.boneIds[boneIndex],
                                 position: position,
                                 rotation: rotation
                             });
@@ -267,7 +259,7 @@
                 for (let frameIndex = 0; frameIndex < this.animationData.framesCount; frameIndex++) {
                     const frame = this.animationData.frames[frameIndex];
                     const frameNumber = frameIndex + 1;
-                    // Note: This sorting is for *CSV output consistency* and is separate from the *parsing fix* above.
+                    // Sort bones by ID for a consistent export order
                     const sortedBones = [...frame.bones].sort((a, b) => a.boneId - b.boneId);
                     for (const bone of sortedBones) {
                         const boneName = BONE_MAP[bone.boneId] || `bone_${bone.boneId}`; // Use BONE_MAP
@@ -327,7 +319,7 @@
                         .join('');
                     
                     const successMessage = `
-                        <p>✅ Animation successfully parsed (with Bone ID fix implemented).</p>
+                        <p>✅ Animation successfully parsed.</p>
                         <p>**Frames:** ${this.parser.animationData.framesCount}</p>
                         <p>**Bones Found (${this.parser.animationData.bonesCount}):**</p>
                         <ul class="bone-list">${boneListHtml}</ul>
