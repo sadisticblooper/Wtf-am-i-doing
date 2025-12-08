@@ -158,8 +158,7 @@
                 }
                 return (s ? -1 : 1) * Math.pow(2, e - 15) * (1 + f / Math.pow(2, 10));
             }
-            
-            // FIXED: Always return [x, y, z, w] in consistent order
+            // FIXED: Added sign bit handling for reconstructed component
             parseCompressedQuaternion(v0, v1, v2) {
                 const scale = 1.0 / 32767.0;
                 const maxValue = 1.4142135;
@@ -172,60 +171,28 @@
                 const signBit = (v0 >> 15) & 1;
                 
                 // Calculate the three stored components
-                const comp1 = ((v1 >> 14) + 4 * (v0 & 0x1FFF)) * scale * maxValue - shift;
-                const comp2 = ((v2 >> 15) + 2 * (v1 & 0x3FFF)) * scale * maxValue - shift;
-                const comp3 = (v2 & 0x7FFF) * scale * maxValue - shift;
+                const a = ((v1 >> 14) + 4 * (v0 & 0x1FFF)) * scale * maxValue - shift;
+                const b = ((v2 >> 15) + 2 * (v1 & 0x3FFF)) * scale * maxValue - shift;
+                const c = (v2 & 0x7FFF) * scale * maxValue - shift;
                 
                 // Calculate the reconstructed (omitted) component
-                const dSquared = 1.0 - (comp1*comp1 + comp2*comp2 + comp3*comp3);
-                let reconstructed = dSquared > 0 ? Math.sqrt(dSquared) : 0;
+                const dSquared = 1.0 - (a*a + b*b + c*c);
+                let d = dSquared > 0 ? Math.sqrt(dSquared) : 0;
                 
                 // Apply sign based on sign bit
                 if (signBit === 1) {
-                    reconstructed = -reconstructed;
+                    d = -d;
                 }
                 
-                // Map back to [x, y, z, w] based on which component was omitted
-                // The stored components are the other three components in X, Y, Z, W order
-                let x, y, z, w;
-                
+                // Reorder components based on which one was omitted
                 switch (missing) {
-                    case 0: // W was omitted
-                        // stored: comp1 = X, comp2 = Y, comp3 = Z
-                        x = comp1;
-                        y = comp2;
-                        z = comp3;
-                        w = reconstructed;
-                        break;
-                    case 1: // X was omitted
-                        // stored: comp1 = W, comp2 = Y, comp3 = Z
-                        w = comp1;
-                        x = reconstructed;
-                        y = comp2;
-                        z = comp3;
-                        break;
-                    case 2: // Y was omitted
-                        // stored: comp1 = X, comp2 = W, comp3 = Z
-                        x = comp1;
-                        w = comp2;
-                        y = reconstructed;
-                        z = comp3;
-                        break;
-                    case 3: // Z was omitted
-                        // stored: comp1 = X, comp2 = Y, comp3 = W
-                        x = comp1;
-                        y = comp2;
-                        w = comp3;
-                        z = reconstructed;
-                        break;
-                    default:
-                        x = 0; y = 0; z = 0; w = 1;
+                    case 0: return [d, a, b, c]; // W was omitted, return [W, X, Y, Z]
+                    case 1: return [a, d, b, c]; // X was omitted, return [X, W, Y, Z]
+                    case 2: return [a, b, d, c]; // Y was omitted, return [X, Y, W, Z]
+                    case 3: return [a, b, c, d]; // Z was omitted, return [X, Y, Z, W]
+                    default: return [1, 0, 0, 0];
                 }
-                
-                // Return in consistent [x, y, z, w] order
-                return [x, y, z, w];
             }
-            
             async parseAnimationData(arrayBuffer) {
                 try {
                     const dataView = new DataView(arrayBuffer);
@@ -265,7 +232,6 @@
                                 this.halfToFloat(pz)
                             ];
                             
-                            // Now rotation is always [x, y, z, w]
                             const rotation = this.parseCompressedQuaternion(v0, v1, v2);
                             frame.bones.push({
                                 boneId: this.boneIds[boneIndex],
@@ -287,7 +253,6 @@
                     throw error;
                 }
             }
-            
             getAllAnimationDataCSV() {
                 if (!this.animationData) return '';
                 const csvRows = ['bone_id,bone_name,frame_number,position_x,position_y,position_z,rotation_x,rotation_y,rotation_z,rotation_w'];
@@ -297,22 +262,20 @@
                     // Sort bones by ID for a consistent export order
                     const sortedBones = [...frame.bones].sort((a, b) => a.boneId - b.boneId);
                     for (const bone of sortedBones) {
-                        const boneName = BONE_MAP[bone.boneId] || `bone_${bone.boneId}`;
-                        
-                        // rotation is now guaranteed to be [x, y, z, w]
+                        const boneName = BONE_MAP[bone.boneId] || `bone_${bone.boneId}`; // Use BONE_MAP
                         const [qX, qY, qZ, qW] = bone.rotation;
                         
                         const row = [
                             bone.boneId,
-                            boneName,
+                            boneName, // Insert bone name
                             frameNumber,
                             bone.position[0].toFixed(6),
                             bone.position[1].toFixed(6),
                             bone.position[2].toFixed(6),
-                            qX.toFixed(6),  // x
-                            qY.toFixed(6),  // y
-                            qZ.toFixed(6),  // z
-                            qW.toFixed(6)   // w
+                            qX.toFixed(6),
+                            qY.toFixed(6),
+                            qZ.toFixed(6),
+                            qW.toFixed(6)
                         ];
                         csvRows.push(row.join(','));
                     }
@@ -320,7 +283,6 @@
                 return csvRows.join('\n');
             }
         }
-        
         // --- UI ---
         class SimpleExtractor {
             constructor() {
@@ -362,7 +324,6 @@
                         <p>**Bones Found (${this.parser.animationData.bonesCount}):**</p>
                         <ul class="bone-list">${boneListHtml}</ul>
                         <p>The CSV export will now contain **bone names** and have sorted bone IDs.</p>
-                        <p><strong>Note:</strong> Quaternions are now standardized to [x, y, z, w] order in CSV.</p>
                     `;
 
                     this.showSuccess(successMessage);
@@ -381,7 +342,7 @@
                     return;
                 }
                 const data = this.parser.getAllAnimationDataCSV();
-                const filename = `${this.file.name.replace(/\.[^/.]+$/, "")}_all_frames_sorted_named.csv`;
+                const filename = `${this.file.name.replace(/\.[^/.]+$/, "")}_all_frames_sorted_named.csv`; // Updated filename
                 const mimeType = 'text/csv';
                 if (!data) {
                     this.showError('Could not generate export data');
@@ -389,7 +350,7 @@
                 }
                 this.downloadFile(data, filename, mimeType);
                 this.showSuccess(`⬇️ Exported all ${this.parser.animationData.framesCount} frames to **${filename}**!`);
-                setTimeout(() => this.hideMessages(), 5000);
+                setTimeout(() => this.hideMessages(), 5000); // Keep success message for download a bit longer
             }
             downloadFile(data, filename, mimeType) {
                 const blob = new Blob([data], { type: mimeType });
@@ -419,7 +380,7 @@
                 document.getElementById('successMessage').style.display = 'none';
             }
             showSuccess(message) {
-                this.showMessage('successMessage', message, true);
+                this.showMessage('successMessage', message, true); // Use innerHTML for bone list
                 document.getElementById('successMessage').style.display = 'block';
                 document.getElementById('errorMessage').style.display = 'none';
             }
