@@ -1,0 +1,5 @@
+{
+  "name": "SF3 Animation Diddler & Visualizer",
+  "description": "A tool to parse binary animation files, extract data, and visualize skeletal animations in 3D using a hardcoded skeleton hierarchy.",
+  "requestFramePermissions": []
+}
