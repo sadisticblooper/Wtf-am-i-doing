@@ -1,3 +1,4 @@
+
 export function halfToFloat(h) {
     const s = (h & 0x8000) >> 15;
     const e = (h & 0x7c00) >> 10;
