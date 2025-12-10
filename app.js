@@ -19,13 +19,13 @@ class App {
             playBtn: document.getElementById('playBtn'),
             timeline: document.getElementById('timeline'),
             speed: document.getElementById('speed'),
-            infoFrames: document.getElementById('totalFrames'),
-            infoBones: document.getElementById('boneCount'),
+            infoFrames: document.getElementById('infoFrames'),
+            infoBones: document.getElementById('infoBones'),
             btnImport: document.getElementById('btnImportGltf'),
             btnExport: document.getElementById('btnExportGltf'),
             btnCompile: document.getElementById('btnCompile'),
             loader: document.getElementById('loader'),
-            toast: document.getElementById('toast'),
+            statusText: document.getElementById('statusText'),
             frameDisplay: document.getElementById('frameDisplay'),
             speedDisplay: document.getElementById('speedDisplay')
         };
@@ -40,28 +40,28 @@ class App {
     }
 
     setupEvents() {
-        // Main File Input
+        // Base File Input
         this.els.dropZone.onclick = (e) => {
             if(e.target !== this.els.fileInput) this.els.fileInput.click();
         };
-        this.els.fileInput.onchange = (e) => this.handleFile(e.target.files[0]);
+        this.els.fileInput.onchange = (e) => this.handleBaseFile(e.target.files[0]);
 
         // GLTF Import
         this.els.btnImport.onclick = () => this.els.gltfInput.click();
-        this.els.gltfInput.onchange = (e) => this.handleFile(e.target.files[0]);
+        this.els.gltfInput.onchange = (e) => this.handleGltfImport(e.target.files[0]);
 
         // GLTF Export
         this.els.btnExport.onclick = async () => {
             if(!this.animationData) return;
-            this.showLoader(true);
+            this.setLoading(true);
             try {
                 const blob = await gltfHandler.exportGLTF(this.animationData, this.fps);
-                this.download(blob, 'animation_export.gltf');
-                this.showToast('GLTF Exported Successfully');
+                this.download(blob, 'sf3_animation_export.gltf');
+                this.setStatus('Export Successful', 'success');
             } catch(e) {
-                this.showToast(e.message, true);
+                this.setStatus('Export Failed: ' + e.message, 'error');
             }
-            this.showLoader(false);
+            this.setLoading(false);
         };
 
         // Compile
@@ -71,9 +71,9 @@ class App {
                 const buffer = animationParser.repack(this.animationData);
                 const blob = new Blob([buffer], { type: 'application/octet-stream' });
                 this.download(blob, 'compiled_animation.bytes');
-                this.showToast('Binary Compiled Successfully');
+                this.setStatus('Binary Compiled Successfully', 'success');
             } catch(e) {
-                this.showToast("Compile Error: " + e.message, true);
+                this.setStatus('Compile Error: ' + e.message, 'error');
             }
         };
 
@@ -91,40 +91,69 @@ class App {
         };
     }
 
-    async handleFile(file) {
+    async handleBaseFile(file) {
         if (!file) return;
-        this.showLoader(true);
+        this.setLoading(true);
         this.els.fileName.textContent = file.name;
+        this.setStatus('Parsing Base File...', 'normal');
 
         try {
-            if (file.name.endsWith('.gltf') || file.name.endsWith('.glb')) {
-                // Import GLTF
-                this.animationData = await gltfHandler.importGLTF(file, this.fps);
-                this.showToast(`Imported ${this.animationData.framesCount} frames from GLTF`);
-            } else {
-                // Load Binary
-                const buffer = await file.arrayBuffer();
-                this.animationData = await animationParser.parse(buffer);
-                this.showToast('Binary Loaded Successfully');
-            }
-
-            // Reset
-            this.currentFrame = 0;
-            this.isPlaying = true;
-            this.els.timeline.max = this.animationData.framesCount - 1;
-            this.els.infoBones.textContent = this.animationData.bonesCount;
-            this.els.infoFrames.textContent = this.animationData.framesCount;
-            this.els.btnExport.disabled = false;
-            this.els.btnCompile.disabled = false;
+            const buffer = await file.arrayBuffer();
+            this.animationData = await animationParser.parse(buffer);
             
-            this.updateUI();
+            this.resetPlaybackState();
+            this.setStatus('Base File Loaded', 'success');
+            this.enableControls(true);
 
         } catch (err) {
             console.error(err);
-            this.showToast(err.message, true);
-            this.els.fileName.textContent = 'Error Loading File';
+            this.setStatus('Error: ' + err.message, 'error');
+            this.els.fileName.textContent = 'Load Failed';
         }
-        this.showLoader(false);
+        this.setLoading(false);
+    }
+
+    async handleGltfImport(file) {
+        if (!file) return;
+        if (!animationParser.originalHeaderBuffer) {
+            this.setStatus('Error: Load a Base File first!', 'error');
+            return;
+        }
+
+        this.setLoading(true);
+        this.setStatus('Importing GLTF...', 'normal');
+
+        try {
+            const newData = await gltfHandler.importGLTF(file, this.fps);
+            
+            // Merge new frames into existing structure
+            this.animationData.frames = newData.frames;
+            this.animationData.framesCount = newData.framesCount;
+            // Note: We keep bonesCount and IDs from base file to ensure compatibility
+            
+            this.resetPlaybackState();
+            this.setStatus(`Imported ${newData.framesCount} frames from GLTF`, 'success');
+
+        } catch (err) {
+            console.error(err);
+            this.setStatus('Import Error: ' + err.message, 'error');
+        }
+        this.setLoading(false);
+    }
+
+    resetPlaybackState() {
+        this.currentFrame = 0;
+        this.isPlaying = true;
+        this.els.timeline.max = this.animationData.framesCount - 1;
+        this.els.infoBones.textContent = this.animationData.bonesCount;
+        this.els.infoFrames.textContent = this.animationData.framesCount;
+        this.updateUI();
+    }
+
+    enableControls(enabled) {
+        this.els.btnExport.disabled = !enabled;
+        this.els.btnCompile.disabled = !enabled;
+        this.els.btnImport.disabled = !enabled; // GLTF import available only after base load
     }
 
     togglePlay() {
@@ -134,7 +163,7 @@ class App {
 
     updateUI() {
         this.els.playBtn.innerHTML = this.isPlaying ? '<i class="fas fa-pause"></i> Pause' : '<i class="fas fa-play"></i> Play';
-        this.els.playBtn.className = `play-btn ${this.isPlaying ? 'pause' : 'play'}`;
+        this.els.playBtn.className = `btn-play ${this.isPlaying ? 'paused' : ''}`;
         this.els.timeline.value = this.currentFrame;
         this.els.frameDisplay.textContent = `${this.currentFrame} / ${this.animationData ? this.animationData.framesCount : 0}`;
     }
@@ -170,15 +199,13 @@ class App {
         URL.revokeObjectURL(url);
     }
 
-    showToast(msg, isError = false) {
-        this.els.toast.textContent = msg;
-        this.els.toast.classList.toggle('error', isError);
-        this.els.toast.classList.add('show');
-        setTimeout(() => this.els.toast.classList.remove('show'), 3000);
+    setStatus(msg, type) {
+        this.els.statusText.textContent = msg;
+        this.els.statusText.className = 'status-line ' + type;
     }
 
-    showLoader(show) {
-        this.els.loader.style.display = show ? 'flex' : 'none';
+    setLoading(loading) {
+        this.els.loader.style.display = loading ? 'flex' : 'none';
     }
 }
 
