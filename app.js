@@ -1,3 +1,4 @@
+
 import { animationParser } from './parser.js';
 import { gltfHandler } from './gltf-handler.js';
 import { SceneController } from './scene.js';
@@ -52,7 +53,10 @@ class App {
 
         // GLTF Export
         this.els.btnExport.onclick = async () => {
-            if(!this.animationData) return;
+            if(!this.animationData) {
+                this.setStatus('Error: No animation data to export', 'error');
+                return;
+            }
             this.setLoading(true);
             try {
                 const blob = await gltfHandler.exportGLTF(this.animationData, this.fps);
@@ -66,7 +70,10 @@ class App {
 
         // Compile
         this.els.btnCompile.onclick = () => {
-            if(!this.animationData) return;
+            if(!this.animationData) {
+                this.setStatus('Error: No animation data to compile', 'error');
+                return;
+            }
             try {
                 const buffer = animationParser.repack(this.animationData);
                 const blob = new Blob([buffer], { type: 'application/octet-stream' });
@@ -109,13 +116,16 @@ class App {
             console.error(err);
             this.setStatus('Error: ' + err.message, 'error');
             this.els.fileName.textContent = 'Load Failed';
+            this.enableControls(false);
         }
         this.setLoading(false);
     }
 
     async handleGltfImport(file) {
         if (!file) return;
-        if (!animationParser.originalHeaderBuffer) {
+        
+        // Check if we have parsed a base file
+        if (!this.animationData || !animationParser.originalFileBuffer) {
             this.setStatus('Error: Load a Base File first!', 'error');
             return;
         }
@@ -144,16 +154,20 @@ class App {
     resetPlaybackState() {
         this.currentFrame = 0;
         this.isPlaying = true;
-        this.els.timeline.max = this.animationData.framesCount - 1;
-        this.els.infoBones.textContent = this.animationData.bonesCount;
-        this.els.infoFrames.textContent = this.animationData.framesCount;
+        if (this.animationData) {
+            this.els.timeline.max = this.animationData.framesCount - 1;
+            this.els.infoBones.textContent = this.animationData.bonesCount;
+            this.els.infoFrames.textContent = this.animationData.framesCount;
+        }
         this.updateUI();
+        this.renderFrame();
     }
 
     enableControls(enabled) {
         this.els.btnExport.disabled = !enabled;
         this.els.btnCompile.disabled = !enabled;
-        this.els.btnImport.disabled = !enabled; // GLTF import available only after base load
+        // GLTF import should be available if we have a base file
+        this.els.btnImport.disabled = !enabled;
     }
 
     togglePlay() {
@@ -162,14 +176,18 @@ class App {
     }
 
     updateUI() {
-        this.els.playBtn.innerHTML = this.isPlaying ? '<i class="fas fa-pause"></i> Pause' : '<i class="fas fa-play"></i> Play';
-        this.els.playBtn.className = `btn-play ${this.isPlaying ? 'paused' : ''}`;
-        this.els.timeline.value = this.currentFrame;
-        this.els.frameDisplay.textContent = `${this.currentFrame} / ${this.animationData ? this.animationData.framesCount : 0}`;
+        if (this.animationData) {
+            this.els.playBtn.innerHTML = this.isPlaying ? '<i class="fas fa-pause"></i> Pause' : '<i class="fas fa-play"></i> Play';
+            this.els.playBtn.className = `btn-play ${this.isPlaying ? 'paused' : ''}`;
+            this.els.timeline.value = this.currentFrame;
+            this.els.frameDisplay.textContent = `${this.currentFrame} / ${this.animationData.framesCount}`;
+        } else {
+            this.els.frameDisplay.textContent = '0 / 0';
+        }
     }
 
     renderFrame() {
-        if (!this.animationData) return;
+        if (!this.animationData || !this.animationData.frames) return;
         const frame = this.animationData.frames[this.currentFrame];
         this.sceneController.applyFrame(frame);
     }
@@ -177,7 +195,7 @@ class App {
     loop(timestamp) {
         requestAnimationFrame(this.loop.bind(this));
         
-        if (this.isPlaying && this.animationData) {
+        if (this.isPlaying && this.animationData && this.animationData.framesCount > 0) {
             const interval = 1000 / this.fps;
             if (timestamp - this.lastTime > interval) {
                 this.currentFrame = (this.currentFrame + 1) % this.animationData.framesCount;
