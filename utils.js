@@ -1,5 +1,3 @@
-// Bit manipulation and math helpers for SF3 animation format
-
 export function halfToFloat(h) {
     const s = (h & 0x8000) >> 15;
     const e = (h & 0x7c00) >> 10;
@@ -71,7 +69,6 @@ export function compressQuaternion(q0, q1, q2, q3) {
     const signBit = arr[maxIdx] < 0 ? 1 : 0;
     let a, b, c;
 
-    // Map remaining 3 components
     if (maxIdx === 0)      { a=q1; b=q2; c=q3; }
     else if (maxIdx === 1) { a=q0; b=q2; c=q3; }
     else if (maxIdx === 2) { a=q0; b=q1; c=q3; }
