@@ -1,4 +1,3 @@
-// Maps Bone IDs (from the binary file) to Bone Names (in the skeleton hierarchy)
 export const BONE_MAP = {
   0: "pelvis", 1: "stomach", 2: "chest", 3: "neck", 4: "head", 5: "hair", 6: "hair1",
   7: "zero_joint_hand_l", 8: "clavicle_l", 9: "arm_l", 10: "forearm_l",
@@ -14,7 +13,11 @@ export const BONE_MAP = {
   61: "foot_r_extra", 62: "toe_r_extra", 63: "weapon_r_extra", 64: "weapon_l_extra", 65: "root_extra",
 };
 
-// Hardcoded skeleton hierarchy string
+export const NAME_TO_ID = Object.entries(BONE_MAP).reduce((acc, [id, name]) => {
+  acc[name] = parseInt(id);
+  return acc;
+}, {});
+
 export const SKELETON_DEFINITION = `
 "pelvis" [BONE] | G.Pos:(-105.750, 80.938, -7.070) | G.Rot (quat):(0.0196, -0.2812, -0.0333, 0.9589)
   "zero_joint_pelvis_l" [BONE] | G.Pos:(-105.750, 80.938, -7.070) | G.Rot (quat):(0.0196, -0.2812, -0.0333, 0.9589)
@@ -75,9 +78,3 @@ export const SKELETON_DEFINITION = `
           "toe_r" [BONE] | G.Pos:(-70.829, 2.644, 13.255) | G.Rot (quat):(0.0453, 0.6014, 0.0107, 0.7976)
     "back_r" [BONE] | G.Pos:(-93.463, 75.551, -9.812) | G.Rot (quat):(0.0335, 0.9567, 0.0193, 0.2886)
 `;
-
-// Reverse mapping from name to ID
-export const NAME_TO_ID = Object.entries(BONE_MAP).reduce((acc, [id, name]) => {
-  acc[name] = parseInt(id);
-  return acc;
-}, {});
