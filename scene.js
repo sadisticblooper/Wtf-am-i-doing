@@ -12,10 +12,11 @@ export class SceneController {
 
     init() {
         this.scene = new THREE.Scene();
-        this.scene.background = new THREE.Color(0x111827);
+        this.scene.background = new THREE.Color(0x000000);
 
         // Grid & Helpers
-        this.scene.add(new THREE.GridHelper(500, 50, 0x374151, 0x1f2937));
+        const grid = new THREE.GridHelper(500, 50, 0x333333, 0x111111);
+        this.scene.add(grid);
         this.scene.add(new THREE.AxesHelper(20));
 
         // Camera
@@ -63,34 +64,29 @@ export class SceneController {
             if (!nameMatch) return;
             const name = nameMatch[1];
             
-            // Initial transform from definition
             const pos = posMatch[1].split(',').map(parseFloat);
             const rot = rotMatch[1].split(',').map(parseFloat);
 
             const bone = new THREE.Bone();
             bone.name = name;
             
-            // Store for updates
             this.bones[name] = bone;
             const id = NAME_TO_ID[name];
             if (id !== undefined) this.boneIdMap[id] = bone;
 
-            // Logic to convert Global Definition to Local Hierarchy
-            // For visualization simply attach and let Three handle the graph
             if (depth === 0) {
                 this.scene.add(bone);
                 rootBones.push(bone);
                 stack[0] = bone;
-                // Set initial world transform
                 bone.position.set(...pos);
                 bone.quaternion.set(...rot);
             } else {
                 const parent = stack[depth - 1];
-                parent.attach(bone); // Attach keeps world transform
-                bone.position.set(...pos); // Set Global pos 
-                bone.quaternion.set(...rot); // Set Global rot
+                parent.attach(bone);
+                bone.position.set(...pos); 
+                bone.quaternion.set(...rot);
                 bone.updateMatrixWorld();
-                parent.attach(bone); // Re-attach to enforce hierarchy
+                parent.attach(bone);
                 stack[depth] = bone;
             }
         });
