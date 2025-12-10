@@ -1,4 +1,5 @@
 import { animationParser } from './parser.js';
+import { gltfHandler } from './gltf-handler.js';
 import { SceneController } from './scene.js';
 
 class App {
@@ -8,168 +9,177 @@ class App {
         this.isPlaying = false;
         this.currentFrame = 0;
         this.fps = 30;
-        this.lastFrameTime = 0;
-        this.totalFrames = 0;
+        this.lastTime = 0;
         
-        // UI Elements
         this.els = {
-            fileUploadArea: document.getElementById('fileUploadArea'),
-            fileInput: document.getElementById('fileInput'),
+            dropZone: document.getElementById('dropZone'),
+            fileInput: document.getElementById('mainFileInput'),
             fileName: document.getElementById('fileName'),
-            playButton: document.getElementById('playButton'),
-            timelineSlider: document.getElementById('timelineSlider'),
-            speedSlider: document.getElementById('speedSlider'),
-            speedValue: document.getElementById('speedValue'),
-            frameCounter: document.getElementById('frameCounter'),
-            bonesCount: document.getElementById('bonesCount'),
-            framesCount: document.getElementById('framesCount'),
-            exportButton: document.getElementById('exportButton'),
-            statusMessage: document.getElementById('statusMessage'),
-            waitingMessage: document.getElementById('waitingMessage'),
+            gltfInput: document.getElementById('gltfInput'),
+            playBtn: document.getElementById('playBtn'),
+            timeline: document.getElementById('timeline'),
+            speed: document.getElementById('speed'),
+            infoFrames: document.getElementById('totalFrames'),
+            infoBones: document.getElementById('boneCount'),
+            btnImport: document.getElementById('btnImportGltf'),
+            btnExport: document.getElementById('btnExportGltf'),
+            btnCompile: document.getElementById('btnCompile'),
+            loader: document.getElementById('loader'),
+            toast: document.getElementById('toast'),
+            frameDisplay: document.getElementById('frameDisplay'),
+            speedDisplay: document.getElementById('speedDisplay')
         };
 
         this.init();
     }
 
     init() {
-        // Initialize Scene
         this.sceneController = new SceneController('canvasContainer');
-
-        // Setup Event Listeners
-        this.setupUI();
-
-        // Start Animation Loop
+        this.setupEvents();
         requestAnimationFrame(this.loop.bind(this));
     }
 
-    setupUI() {
-        // 1. File Upload Logic (Fixing the "Broken Button")
-        this.els.fileUploadArea.addEventListener('click', (e) => {
-            // Prevent triggering if clicking input itself (bubbling)
-            if (e.target !== this.els.fileInput) {
-                this.els.fileInput.click();
+    setupEvents() {
+        // Main File Input
+        this.els.dropZone.onclick = (e) => {
+            if(e.target !== this.els.fileInput) this.els.fileInput.click();
+        };
+        this.els.fileInput.onchange = (e) => this.handleFile(e.target.files[0]);
+
+        // GLTF Import
+        this.els.btnImport.onclick = () => this.els.gltfInput.click();
+        this.els.gltfInput.onchange = (e) => this.handleFile(e.target.files[0]);
+
+        // GLTF Export
+        this.els.btnExport.onclick = async () => {
+            if(!this.animationData) return;
+            this.showLoader(true);
+            try {
+                const blob = await gltfHandler.exportGLTF(this.animationData, this.fps);
+                this.download(blob, 'animation_export.gltf');
+                this.showToast('GLTF Exported Successfully');
+            } catch(e) {
+                this.showToast(e.message, true);
             }
-        });
+            this.showLoader(false);
+        };
 
-        this.els.fileInput.addEventListener('change', this.handleFileUpload.bind(this));
+        // Compile
+        this.els.btnCompile.onclick = () => {
+            if(!this.animationData) return;
+            try {
+                const buffer = animationParser.repack(this.animationData);
+                const blob = new Blob([buffer], { type: 'application/octet-stream' });
+                this.download(blob, 'compiled_animation.bytes');
+                this.showToast('Binary Compiled Successfully');
+            } catch(e) {
+                this.showToast("Compile Error: " + e.message, true);
+            }
+        };
 
-        // 2. Playback Controls
-        this.els.playButton.addEventListener('click', this.togglePlay.bind(this));
-
-        // 3. Sliders
-        this.els.timelineSlider.addEventListener('input', (e) => {
-            this.pause();
-            this.currentFrame = parseInt(e.target.value) - 1;
-            this.updateFrame();
-        });
-
-        this.els.speedSlider.addEventListener('input', (e) => {
+        // Playback
+        this.els.playBtn.onclick = () => this.togglePlay();
+        this.els.timeline.oninput = (e) => {
+            this.isPlaying = false;
+            this.currentFrame = parseInt(e.target.value);
+            this.updateUI();
+            this.renderFrame();
+        };
+        this.els.speed.oninput = (e) => {
             this.fps = parseInt(e.target.value);
-            this.els.speedValue.textContent = `${this.fps} FPS`;
-        });
-
-        // 4. Export
-        this.els.exportButton.addEventListener('click', () => {
-            if (this.animationData) {
-                animationParser.convertToCSV(this.animationData, this.els.fileInput.files[0]?.name || 'anim.bytes');
-            }
-        });
+            this.els.speedDisplay.textContent = `${this.fps} FPS`;
+        };
     }
 
-    async handleFileUpload(event) {
-        const file = event.target.files[0];
+    async handleFile(file) {
         if (!file) return;
-
+        this.showLoader(true);
         this.els.fileName.textContent = file.name;
-        this.els.statusMessage.className = 'status-message status-loading';
-        this.els.statusMessage.textContent = 'Parsing binary data...';
-        this.els.waitingMessage.style.display = 'none';
 
         try {
-            const arrayBuffer = await file.arrayBuffer();
-            this.animationData = await animationParser.parse(arrayBuffer);
-            
-            // Reset State
-            this.totalFrames = this.animationData.framesCount;
+            if (file.name.endsWith('.gltf') || file.name.endsWith('.glb')) {
+                // Import GLTF
+                this.animationData = await gltfHandler.importGLTF(file, this.fps);
+                this.showToast(`Imported ${this.animationData.framesCount} frames from GLTF`);
+            } else {
+                // Load Binary
+                const buffer = await file.arrayBuffer();
+                this.animationData = await animationParser.parse(buffer);
+                this.showToast('Binary Loaded Successfully');
+            }
+
+            // Reset
             this.currentFrame = 0;
-            this.pause();
+            this.isPlaying = true;
+            this.els.timeline.max = this.animationData.framesCount - 1;
+            this.els.infoBones.textContent = this.animationData.bonesCount;
+            this.els.infoFrames.textContent = this.animationData.framesCount;
+            this.els.btnExport.disabled = false;
+            this.els.btnCompile.disabled = false;
             
-            // Update UI
-            this.els.timelineSlider.max = this.totalFrames;
-            this.els.timelineSlider.value = 1;
-            this.els.bonesCount.textContent = this.animationData.bonesCount;
-            this.els.framesCount.textContent = this.totalFrames;
-            this.els.exportButton.disabled = false;
-            
-            this.els.statusMessage.className = 'status-message';
-            this.els.statusMessage.textContent = 'Ready';
-            this.els.statusMessage.style.color = '#10b981'; // Green
+            this.updateUI();
 
-            // Show first frame
-            this.updateFrame();
-
-        } catch (error) {
-            console.error(error);
-            this.els.statusMessage.className = 'status-message status-error';
-            this.els.statusMessage.textContent = `Error: ${error.message}`;
-            this.els.fileName.textContent = 'Load Failed';
+        } catch (err) {
+            console.error(err);
+            this.showToast(err.message, true);
+            this.els.fileName.textContent = 'Error Loading File';
         }
+        this.showLoader(false);
     }
 
     togglePlay() {
+        this.isPlaying = !this.isPlaying;
+        this.updateUI();
+    }
+
+    updateUI() {
+        this.els.playBtn.innerHTML = this.isPlaying ? '<i class="fas fa-pause"></i> Pause' : '<i class="fas fa-play"></i> Play';
+        this.els.playBtn.className = `play-btn ${this.isPlaying ? 'pause' : 'play'}`;
+        this.els.timeline.value = this.currentFrame;
+        this.els.frameDisplay.textContent = `${this.currentFrame} / ${this.animationData ? this.animationData.framesCount : 0}`;
+    }
+
+    renderFrame() {
         if (!this.animationData) return;
-        
-        if (this.isPlaying) {
-            this.pause();
-        } else {
-            this.play();
-        }
-    }
-
-    play() {
-        this.isPlaying = true;
-        this.els.playButton.classList.remove('play');
-        this.els.playButton.classList.add('pause');
-        this.els.playButton.innerHTML = '<i class="fas fa-pause"></i> Pause';
-    }
-
-    pause() {
-        this.isPlaying = false;
-        this.els.playButton.classList.remove('pause');
-        this.els.playButton.classList.add('play');
-        this.els.playButton.innerHTML = '<i class="fas fa-play"></i> Play';
-    }
-
-    updateFrame() {
-        if (!this.animationData) return;
-
-        // Loop logic
-        if (this.currentFrame >= this.totalFrames) {
-            this.currentFrame = 0;
-        }
-
-        // Update Slider UI
-        this.els.timelineSlider.value = this.currentFrame + 1;
-        this.els.frameCounter.textContent = `${this.currentFrame + 1} / ${this.totalFrames}`;
-
-        // Send data to Scene
-        const frameData = this.animationData.frames[this.currentFrame];
-        this.sceneController.applyFrame(frameData);
+        const frame = this.animationData.frames[this.currentFrame];
+        this.sceneController.applyFrame(frame);
     }
 
     loop(timestamp) {
         requestAnimationFrame(this.loop.bind(this));
-
+        
         if (this.isPlaying && this.animationData) {
             const interval = 1000 / this.fps;
-            if (timestamp - this.lastFrameTime > interval) {
-                this.currentFrame++;
-                this.updateFrame();
-                this.lastFrameTime = timestamp;
+            if (timestamp - this.lastTime > interval) {
+                this.currentFrame = (this.currentFrame + 1) % this.animationData.framesCount;
+                this.renderFrame();
+                this.updateUI();
+                this.lastTime = timestamp;
             }
         }
     }
+
+    download(blob, filename) {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    }
+
+    showToast(msg, isError = false) {
+        this.els.toast.textContent = msg;
+        this.els.toast.classList.toggle('error', isError);
+        this.els.toast.classList.add('show');
+        setTimeout(() => this.els.toast.classList.remove('show'), 3000);
+    }
+
+    showLoader(show) {
+        this.els.loader.style.display = show ? 'flex' : 'none';
+    }
 }
 
-// Initialize App
 new App();
