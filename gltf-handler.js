@@ -31,33 +31,33 @@ export class GLTFHandler {
                 const totalFrames = Math.max(1, Math.ceil(duration * fps));
                 const frameTime = 1 / fps;
 
-                // Identify Bones
+                // Scan for bones
                 const sceneBones = [];
                 gltf.scene.traverse(obj => {
-                    if (obj.isBone && NAME_TO_ID[obj.name] !== undefined) {
-                        sceneBones.push({ node: obj, id: NAME_TO_ID[obj.name] });
+                    if (obj.isBone) {
+                        // Fuzzy match name? Or exact?
+                        // Let's try exact match with map first
+                        const id = NAME_TO_ID[obj.name];
+                        if (id !== undefined) {
+                            sceneBones.push({ node: obj, id: id });
+                        }
                     }
                 });
 
                 if (sceneBones.length === 0) {
-                    reject(new Error("No matching SF3 bones found in GLTF scene"));
+                    reject(new Error("No SF3-compatible bones found (check bone names)"));
                     return;
                 }
-
-                // Sort bones by ID to maintain consistent order
-                sceneBones.sort((a, b) => a.id - b.id);
-                const boneIds = sceneBones.map(b => b.id);
 
                 const frames = [];
 
                 for (let f = 0; f < totalFrames; f++) {
                     mixer.setTime(f * frameTime);
-                    // Force update
+                    // Force matrix update to get animated local transforms
                     gltf.scene.updateMatrixWorld(true);
 
                     const frameBones = sceneBones.map(b => {
-                        // We use position/quaternion directly as they represent local transform
-                        // which is what the binary format expects relative to parent
+                        // SF3 format expects LOCAL transform relative to parent
                         return {
                             boneId: b.id,
                             position: [b.node.position.x, b.node.position.y, b.node.position.z],
@@ -70,8 +70,9 @@ export class GLTFHandler {
                 resolve({
                     frames,
                     framesCount: totalFrames,
-                    bonesCount: boneIds.length,
-                    boneIds
+                    bonesCount: sceneBones.length
+                    // Note: We don't overwrite boneIds array in app.js if we import. 
+                    // We assume Base File provides the ID list order.
                 });
 
             }, undefined, (err) => reject(err));
@@ -81,60 +82,56 @@ export class GLTFHandler {
     // --- EXPORT: AnimationData -> GLTF ---
     exportGLTF(animationData, fps = 30) {
         return new Promise((resolve, reject) => {
-            // 1. Reconstruct Skeleton Scene
-            const { root, bonesMap } = this.buildSkeletonScene();
+            // 1. Build Skeleton with user-provided logic
+            const { root, bones } = this.buildSkeletonHierarchy();
             
-            // 2. Create Animation Clip
+            // 2. Create Skinned Mesh (The Armature)
+            const skinnedMesh = this.createDummySkinnedMesh(bones);
+            const scene = new THREE.Scene();
+            scene.add(skinnedMesh);
+            scene.add(root); // Add root explicitly to scene graph
+
+            // 3. Create Keyframe Tracks
             const tracks = [];
             const times = [];
             for(let f=0; f<animationData.framesCount; f++) times.push(f / fps);
 
-            const boneIds = animationData.boneIds;
-            
-            // Prepare tracks per bone
-            boneIds.forEach(id => {
-                const name = BONE_MAP[id];
-                if(!name || !bonesMap[name]) return;
+            // Iterate all defined bones to make tracks
+            Object.values(BONE_MAP).forEach(boneName => {
+                const id = NAME_TO_ID[boneName];
+                // Check if this bone exists in the hierarchy we built
+                const boneNode = bones.find(b => b.name === boneName);
+                if(!boneNode) return;
 
                 const posValues = [];
                 const rotValues = [];
 
                 for(let f=0; f<animationData.framesCount; f++) {
-                    // Find bone data in this frame
-                    const boneData = animationData.frames[f].bones.find(b => b.boneId === id);
-                    if(boneData) {
-                        posValues.push(...boneData.position);
-                        rotValues.push(...boneData.rotation);
+                    const frame = animationData.frames[f];
+                    const bData = frame.bones.find(b => b.boneId === id);
+                    if(bData) {
+                        posValues.push(...bData.position);
+                        rotValues.push(...bData.rotation);
                     } else {
-                        // Fallback to identity/rest if missing
-                        posValues.push(0,0,0);
-                        rotValues.push(0,0,0,1);
+                        // Fallback: use rest pose
+                        posValues.push(boneNode.position.x, boneNode.position.y, boneNode.position.z);
+                        rotValues.push(boneNode.quaternion.x, boneNode.quaternion.y, boneNode.quaternion.z, boneNode.quaternion.w);
                     }
                 }
 
-                tracks.push(new THREE.VectorKeyframeTrack(`${name}.position`, times, posValues));
-                tracks.push(new THREE.QuaternionKeyframeTrack(`${name}.quaternion`, times, rotValues));
+                // Create Tracks
+                if(posValues.length > 0) {
+                    tracks.push(new THREE.VectorKeyframeTrack(`${boneName}.position`, times, posValues));
+                    tracks.push(new THREE.QuaternionKeyframeTrack(`${boneName}.quaternion`, times, rotValues));
+                }
             });
 
-            const clip = new THREE.AnimationClip("SF3_Anim", -1, tracks);
-
-            // 3. Export
-            const scene = new THREE.Scene();
-            scene.add(root);
-            
-            // Create Dummy Mesh for visualization
-            const geometry = new THREE.BoxGeometry(1, 1, 1);
-            const material = new THREE.MeshStandardMaterial({ color: 0x00ff00, skinning: true });
-            const mesh = new THREE.SkinnedMesh(geometry, material);
-            const skeleton = new THREE.Skeleton(Object.values(bonesMap));
-            mesh.add(root);
-            mesh.bind(skeleton);
-            scene.add(mesh);
+            const clip = new THREE.AnimationClip("SF3_Animation", -1, tracks);
 
             this.exporter.parse(
                 scene,
                 (gltf) => {
-                    const blob = new Blob([JSON.stringify(gltf)], { type: 'application/json' });
+                    const blob = new Blob([JSON.stringify(gltf, null, 2)], { type: 'application/gltf+json' });
                     resolve(blob);
                 },
                 (err) => reject(err),
@@ -143,28 +140,26 @@ export class GLTFHandler {
         });
     }
 
-    buildSkeletonScene() {
-        // Parses SKELETON_DEFINITION from constants
+    // Parsers SKELETON_DEFINITION into actual THREE.Bone hierarchy
+    buildSkeletonHierarchy() {
         const lines = SKELETON_DEFINITION.split('\n').filter(l => l.trim().length > 0);
         const stack = [];
-        const bonesMap = {};
+        const bones = [];
         let root = null;
 
         lines.forEach(line => {
-            const depth = line.search(/\S|$/) / 2; // Assuming 2 spaces indentation
+            const depth = line.search(/\S|$/) / 2;
             const nameMatch = line.match(/"([^"]+)"/);
             const posMatch = line.match(/G\.Pos:\(([^)]+)\)/);
             
             if (!nameMatch) return;
             const name = nameMatch[1];
+            // Only used for Rest Pose calculation
             const pos = posMatch ? posMatch[1].split(',').map(Number) : [0,0,0];
 
             const bone = new THREE.Bone();
             bone.name = name;
-            // The definition uses global positions, but ThreeJS needs hierarchy.
-            // We set local position relative to parent.
-            
-            bonesMap[name] = bone;
+            bones.push(bone);
 
             if (depth === 0) {
                 root = bone;
@@ -177,7 +172,7 @@ export class GLTFHandler {
                 
                 parent.add(bone);
                 
-                // Calculate local pos
+                // Set local pos relative to parent
                 const localPos = gPos.clone().sub(parentInfo.gPos);
                 bone.position.copy(localPos);
                 
@@ -185,7 +180,68 @@ export class GLTFHandler {
             }
         });
 
-        return { root, bonesMap };
+        return { root, bones };
+    }
+
+    // Logic provided by user to ensure correct Armature export
+    createDummySkinnedMesh(bones) {
+        const BONE_VISUAL_SIZE = 2.0; 
+        const boxGeo = new THREE.BoxGeometry(BONE_VISUAL_SIZE, BONE_VISUAL_SIZE, BONE_VISUAL_SIZE);
+        const posArr = [], normArr = [], skinIdxArr = [], skinWtArr = [], indicesArr = [];
+        let vertexOffset = 0;
+        
+        // Ensure matrices are up to date
+        if(bones[0].parent) bones[0].parent.updateMatrixWorld(true);
+        else bones[0].updateMatrixWorld(true);
+
+        for (let i = 0; i < bones.length; i++) {
+            const bone = bones[i];
+            const worldPos = new THREE.Vector3();
+            bone.getWorldPosition(worldPos);
+
+            const count = boxGeo.attributes.position.count;
+            for (let v = 0; v < count; v++) {
+                // Bake world position into mesh vertex
+                posArr.push(
+                    boxGeo.attributes.position.getX(v) + worldPos.x,
+                    boxGeo.attributes.position.getY(v) + worldPos.y,
+                    boxGeo.attributes.position.getZ(v) + worldPos.z
+                );
+                normArr.push(boxGeo.attributes.normal.getX(v), boxGeo.attributes.normal.getY(v), boxGeo.attributes.normal.getZ(v));
+                
+                // Rigid bind: Index = i, Weight = 1.0
+                skinIdxArr.push(i, 0, 0, 0);
+                skinWtArr.push(1, 0, 0, 0);
+            }
+            const indexAttribute = boxGeo.index;
+            for (let k = 0; k < indexAttribute.count; k++) {
+                indicesArr.push(indexAttribute.getX(k) + vertexOffset);
+            }
+            vertexOffset += count;
+        }
+
+        const finalGeo = new THREE.BufferGeometry();
+        finalGeo.setAttribute('position', new THREE.Float32BufferAttribute(posArr, 3));
+        finalGeo.setAttribute('normal', new THREE.Float32BufferAttribute(normArr, 3));
+        finalGeo.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(skinIdxArr, 4));
+        finalGeo.setAttribute('skinWeight', new THREE.Float32BufferAttribute(skinWtArr, 4));
+        finalGeo.setIndex(indicesArr);
+
+        const mat = new THREE.MeshStandardMaterial({ 
+            color: 0x00ccff, 
+            roughness: 0.4, 
+            metalness: 0.1, 
+            skinning: true 
+        });
+        
+        const skinnedMesh = new THREE.SkinnedMesh(finalGeo, mat);
+        const skeleton = new THREE.Skeleton(bones);
+        
+        // Critical step for hierarchy recognition
+        skinnedMesh.add(bones[0]); 
+        skinnedMesh.bind(skeleton);
+        
+        return skinnedMesh;
     }
 }
 
