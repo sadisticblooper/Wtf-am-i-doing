@@ -11,11 +11,13 @@ export class GLTFHandler {
 
     // --- IMPORT: GLTF -> AnimationData ---
     async importGLTF(file, fps = 30) {
-        const url = URL.createObjectURL(file);
+        // FIX: Read as ArrayBuffer and use .parse() instead of .load()
+        // This prevents incorrect MIME-type detection or "Unexpected token" JSON errors on .glb files
+        const buffer = await file.arrayBuffer();
         
         return new Promise((resolve, reject) => {
-            this.loader.load(url, (gltf) => {
-                URL.revokeObjectURL(url);
+            // Resource path is empty string because we expect embedded data or GLB
+            this.loader.parse(buffer, '', (gltf) => {
                 
                 if (!gltf.animations || gltf.animations.length === 0) {
                     reject(new Error("No animations found in GLTF"));
@@ -35,8 +37,6 @@ export class GLTFHandler {
                 const sceneBones = [];
                 gltf.scene.traverse(obj => {
                     if (obj.isBone) {
-                        // Fuzzy match name? Or exact?
-                        // Let's try exact match with map first
                         const id = NAME_TO_ID[obj.name];
                         if (id !== undefined) {
                             sceneBones.push({ node: obj, id: id });
@@ -53,11 +53,9 @@ export class GLTFHandler {
 
                 for (let f = 0; f < totalFrames; f++) {
                     mixer.setTime(f * frameTime);
-                    // Force matrix update to get animated local transforms
                     gltf.scene.updateMatrixWorld(true);
 
                     const frameBones = sceneBones.map(b => {
-                        // SF3 format expects LOCAL transform relative to parent
                         return {
                             boneId: b.id,
                             position: [b.node.position.x, b.node.position.y, b.node.position.z],
@@ -71,35 +69,27 @@ export class GLTFHandler {
                     frames,
                     framesCount: totalFrames,
                     bonesCount: sceneBones.length
-                    // Note: We don't overwrite boneIds array in app.js if we import. 
-                    // We assume Base File provides the ID list order.
                 });
 
-            }, undefined, (err) => reject(err));
+            }, (err) => reject(err));
         });
     }
 
     // --- EXPORT: AnimationData -> GLTF ---
     exportGLTF(animationData, fps = 30) {
         return new Promise((resolve, reject) => {
-            // 1. Build Skeleton with user-provided logic
             const { root, bones } = this.buildSkeletonHierarchy();
-            
-            // 2. Create Skinned Mesh (The Armature)
             const skinnedMesh = this.createDummySkinnedMesh(bones);
             const scene = new THREE.Scene();
             scene.add(skinnedMesh);
-            scene.add(root); // Add root explicitly to scene graph
+            scene.add(root);
 
-            // 3. Create Keyframe Tracks
             const tracks = [];
             const times = [];
             for(let f=0; f<animationData.framesCount; f++) times.push(f / fps);
 
-            // Iterate all defined bones to make tracks
             Object.values(BONE_MAP).forEach(boneName => {
                 const id = NAME_TO_ID[boneName];
-                // Check if this bone exists in the hierarchy we built
                 const boneNode = bones.find(b => b.name === boneName);
                 if(!boneNode) return;
 
@@ -113,13 +103,11 @@ export class GLTFHandler {
                         posValues.push(...bData.position);
                         rotValues.push(...bData.rotation);
                     } else {
-                        // Fallback: use rest pose
                         posValues.push(boneNode.position.x, boneNode.position.y, boneNode.position.z);
                         rotValues.push(boneNode.quaternion.x, boneNode.quaternion.y, boneNode.quaternion.z, boneNode.quaternion.w);
                     }
                 }
 
-                // Create Tracks
                 if(posValues.length > 0) {
                     tracks.push(new THREE.VectorKeyframeTrack(`${boneName}.position`, times, posValues));
                     tracks.push(new THREE.QuaternionKeyframeTrack(`${boneName}.quaternion`, times, rotValues));
@@ -140,7 +128,6 @@ export class GLTFHandler {
         });
     }
 
-    // Parsers SKELETON_DEFINITION into actual THREE.Bone hierarchy
     buildSkeletonHierarchy() {
         const lines = SKELETON_DEFINITION.split('\n').filter(l => l.trim().length > 0);
         const stack = [];
@@ -154,7 +141,6 @@ export class GLTFHandler {
             
             if (!nameMatch) return;
             const name = nameMatch[1];
-            // Only used for Rest Pose calculation
             const pos = posMatch ? posMatch[1].split(',').map(Number) : [0,0,0];
 
             const bone = new THREE.Bone();
@@ -171,8 +157,6 @@ export class GLTFHandler {
                 const gPos = new THREE.Vector3(...pos);
                 
                 parent.add(bone);
-                
-                // Set local pos relative to parent
                 const localPos = gPos.clone().sub(parentInfo.gPos);
                 bone.position.copy(localPos);
                 
@@ -183,14 +167,12 @@ export class GLTFHandler {
         return { root, bones };
     }
 
-    // Logic provided by user to ensure correct Armature export
     createDummySkinnedMesh(bones) {
         const BONE_VISUAL_SIZE = 2.0; 
         const boxGeo = new THREE.BoxGeometry(BONE_VISUAL_SIZE, BONE_VISUAL_SIZE, BONE_VISUAL_SIZE);
         const posArr = [], normArr = [], skinIdxArr = [], skinWtArr = [], indicesArr = [];
         let vertexOffset = 0;
         
-        // Ensure matrices are up to date
         if(bones[0].parent) bones[0].parent.updateMatrixWorld(true);
         else bones[0].updateMatrixWorld(true);
 
@@ -201,15 +183,12 @@ export class GLTFHandler {
 
             const count = boxGeo.attributes.position.count;
             for (let v = 0; v < count; v++) {
-                // Bake world position into mesh vertex
                 posArr.push(
                     boxGeo.attributes.position.getX(v) + worldPos.x,
                     boxGeo.attributes.position.getY(v) + worldPos.y,
                     boxGeo.attributes.position.getZ(v) + worldPos.z
                 );
                 normArr.push(boxGeo.attributes.normal.getX(v), boxGeo.attributes.normal.getY(v), boxGeo.attributes.normal.getZ(v));
-                
-                // Rigid bind: Index = i, Weight = 1.0
                 skinIdxArr.push(i, 0, 0, 0);
                 skinWtArr.push(1, 0, 0, 0);
             }
@@ -237,7 +216,6 @@ export class GLTFHandler {
         const skinnedMesh = new THREE.SkinnedMesh(finalGeo, mat);
         const skeleton = new THREE.Skeleton(bones);
         
-        // Critical step for hierarchy recognition
         skinnedMesh.add(bones[0]); 
         skinnedMesh.bind(skeleton);
         
