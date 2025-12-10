@@ -32,36 +32,28 @@ export function parseCompressedQuaternion(v0, v1, v2) {
     const maxValue = 1.4142135;
     const shift = 0.70710677;
 
-    // Extract which component was omitted (bits 13-14)
     const missing = (v0 >> 13) & 3;
-    
-    // Extract sign bit (bit 15)
     const signBit = (v0 >> 15) & 1;
 
-    // Calculate the three stored components
     const a = ((v1 >> 14) + 4 * (v0 & 0x1fff)) * scale * maxValue - shift;
     const b = ((v2 >> 15) + 2 * (v1 & 0x3fff)) * scale * maxValue - shift;
     const c = (v2 & 0x7fff) * scale * maxValue - shift;
 
-    // Calculate the reconstructed component
     const dSquared = 1.0 - (a * a + b * b + c * c);
     let d = dSquared > 0 ? Math.sqrt(dSquared) : 0;
 
     if (signBit === 1) d = -d;
 
-    // Return order: [W, X, Y, Z]
     switch (missing) {
-        case 0: return [d, a, b, c]; // W omitted
-        case 1: return [a, d, b, c]; // X omitted
-        case 2: return [a, b, d, c]; // Y omitted
-        case 3: return [a, b, c, d]; // Z omitted
-        default: return [1, 0, 0, 0]; // Identity (W=1)
+        case 0: return [d, a, b, c];
+        case 1: return [a, d, b, c];
+        case 2: return [a, b, d, c];
+        case 3: return [a, b, c, d];
+        default: return [0, 0, 0, 1];
     }
 }
 
 export function compressQuaternion(q0, q1, q2, q3) {
-    // NOTE: Expects input as [W, X, Y, Z] to match parseCompressedQuaternion output
-
     // 1. Normalize
     let len = Math.sqrt(q0*q0 + q1*q1 + q2*q2 + q3*q3);
     if (len === 0) { q0=0; q1=0; q2=0; q3=1; len=1; }
@@ -70,8 +62,6 @@ export function compressQuaternion(q0, q1, q2, q3) {
     const arr = [q0, q1, q2, q3];
     let maxIdx = 0;
     let maxVal = Math.abs(q0);
-    
-    // Find component with largest magnitude to drop
     for(let i=1; i<4; i++){
         if(Math.abs(arr[i]) > maxVal) { maxVal = Math.abs(arr[i]); maxIdx = i; }
     }
@@ -79,7 +69,6 @@ export function compressQuaternion(q0, q1, q2, q3) {
     const signBit = arr[maxIdx] < 0 ? 1 : 0;
     let a, b, c;
 
-    // Map remaining 3 components to a, b, c
     if (maxIdx === 0)      { a=q1; b=q2; c=q3; }
     else if (maxIdx === 1) { a=q0; b=q2; c=q3; }
     else if (maxIdx === 2) { a=q0; b=q1; c=q3; }

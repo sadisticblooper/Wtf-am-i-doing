@@ -4,61 +4,41 @@ export class AnimationParser {
     constructor() {
         this.originalHeaderBuffer = null;
         this.boneIds = [];
-        this.headerOffsetInfo = {
-            start: 0,
-            end: 0,
-            garbSize: 0
-        };
         this.EXPECTED_HEADER = 457546134634734n;
     }
 
     async parse(arrayBuffer) {
         try {
             const dataView = new DataView(arrayBuffer);
-            
-            // 1. Scan for Header (Matches HTML "Find Header" logic)
-            let headerStart = -1;
-            // Scan reasonable range first, then check 0
-            for(let i=0; i < Math.min(arrayBuffer.byteLength - 8, 1024); i++) {
-                if (dataView.getBigUint64(i, true) === this.EXPECTED_HEADER) {
-                    headerStart = i; 
-                    break;
-                }
-            }
-            if (headerStart === -1 && dataView.getBigUint64(0, true) === this.EXPECTED_HEADER) {
-                headerStart = 0;
-            }
-            
-            if (headerStart === -1) throw new Error('Invalid file signature (Header not found)');
+            let offset = 0;
 
-            // 2. Parse Metadata
-            let offset = headerStart + 8; // Skip Magic
-            const arrayCount = dataView.getInt16(offset, true); offset += 2;
+            const header = dataView.getBigInt64(offset, true);
+            if (header !== this.EXPECTED_HEADER) throw new Error('Invalid file signature');
+
+            // Find structure to preserve header
+            let tempOffset = 8;
+            const arrayCount = dataView.getInt16(tempOffset, true); tempOffset += 2;
             const garbageSize = arrayCount * 8;
-            offset += garbageSize; // Skip garbage
+            const headerEnd = 8 + 2 + garbageSize; 
             
+            offset = headerEnd;
             const framesCount = dataView.getInt32(offset, true); offset += 4;
             const bonesCount = dataView.getInt32(offset, true); offset += 4;
             
-            // Capture bone IDs
+            // Store the header exactly as is (up to frame count)
+            // But we need to include the bone IDs in preservation if we want a perfect copy base
+            // The file structure: [Header][Frames][Bones][BoneIDs array][FRAME DATA]
+            
+            // Let's capture bone IDs too
             this.boneIds = [];
             for (let i = 0; i < bonesCount; i++) {
                 this.boneIds.push(dataView.getInt16(offset, true));
                 offset += 2;
             }
 
-            // Store Header info for repacking
-            const headerEnd = offset;
-            this.headerOffsetInfo = {
-                start: headerStart,
-                end: headerEnd,
-                garbSize: arrayCount
-            };
+            // Save everything UP TO the start of frame data as the "Header Template"
+            this.originalHeaderBuffer = arrayBuffer.slice(0, offset);
 
-            // Save the exact header bytes for preservation
-            this.originalHeaderBuffer = arrayBuffer.slice(0, headerEnd);
-
-            // 3. Parse Frames
             const frames = [];
             for (let frameIndex = 0; frameIndex < framesCount; frameIndex++) {
                 const frameBones = [];
@@ -70,15 +50,10 @@ export class AnimationParser {
                     const v1 = dataView.getUint16(offset, true); offset += 2;
                     const v2 = dataView.getUint16(offset, true); offset += 2;
 
-                    // Parse Rotation
-                    // Binary returns [W, X, Y, Z]
-                    const q = parseCompressedQuaternion(v0, v1, v2);
-
                     frameBones.push({
                         boneId: this.boneIds[boneIndex],
                         position: [halfToFloat(px), halfToFloat(py), halfToFloat(pz)],
-                        // SWIZZLE: Convert [W, X, Y, Z] -> [X, Y, Z, W] for Three.js/App
-                        rotation: [q[1], q[2], q[3], q[0]],
+                        rotation: parseCompressedQuaternion(v0, v1, v2),
                     });
                 }
                 frames.push({ bones: frameBones });
@@ -105,36 +80,35 @@ export class AnimationParser {
         const framesCount = animationData.framesCount;
         
         // 1. Prepare Header
-        const headerSize = this.originalHeaderBuffer.byteLength; // Contains everything up to frame data
+        // Copy the original header
+        const headerSize = this.originalHeaderBuffer.byteLength;
         const bodySize = framesCount * bonesCount * 12;
+        const finalBuffer = new Uint8Array(headerSize + bodySize);
         
-        // If the original file had offset start, we preserve that padding in the new file
-        // headerOffsetInfo.start is the empty space before header
-        const prefixPadding = this.headerOffsetInfo.start;
-        const finalBuffer = new Uint8Array(prefixPadding + headerSize + bodySize);
+        // Set Header
+        finalBuffer.set(new Uint8Array(this.originalHeaderBuffer), 0);
         
-        // Write Header (at correct offset if any)
-        finalBuffer.set(new Uint8Array(this.originalHeaderBuffer), prefixPadding);
-        
-        // Update Frames Count in the header
-        // Location logic from HTML: headerStart + 8 (magic) + 2 (count) + (garbSize * 8)
+        // Update Frames Count in the header (It's located at HeaderEnd)
+        // We need to recalculate where Frame Count is stored.
+        // It is after [Magic 8] + [ArrCount 2] + [ArrCount * 8]
         const dv = new DataView(finalBuffer.buffer);
-        const frameCountOffset = prefixPadding + 8 + 2 + (this.headerOffsetInfo.garbSize * 8);
+        const arrCount = dv.getInt16(8, true);
+        const frameCountOffset = 8 + 2 + (arrCount * 8);
         dv.setInt32(frameCountOffset, framesCount, true);
         
         // 2. Write Body
-        let ptr = prefixPadding + headerSize;
+        let ptr = headerSize;
         const boneIds = this.boneIds; // Use IDs from base file
 
         for(let f=0; f<framesCount; f++) {
             const frame = animationData.frames[f];
-            
-            // Map for O(1) access
+            // Sort frame bones map for O(1) access
             const boneMap = {};
             if(frame.bones) frame.bones.forEach(b => boneMap[b.boneId] = b);
 
             for(let b=0; b<bonesCount; b++) {
                 const id = boneIds[b];
+                // Use data from GLTF import or fallback to identity
                 const boneData = boneMap[id] || { position: [0,0,0], rotation: [0,0,0,1] };
 
                 // Pos
@@ -143,10 +117,7 @@ export class AnimationParser {
                 dv.setUint16(ptr, float32ToFloat16(boneData.position[2]), true); ptr+=2;
 
                 // Rot
-                // SWIZZLE: App uses [X, Y, Z, W]. Compress expects [W, X, Y, Z].
-                const rot = boneData.rotation;
-                const packed = compressQuaternion(rot[3], rot[0], rot[1], rot[2]);
-                
+                const packed = compressQuaternion(boneData.rotation[0], boneData.rotation[1], boneData.rotation[2], boneData.rotation[3]);
                 dv.setUint16(ptr, packed[0], true); ptr+=2;
                 dv.setUint16(ptr, packed[1], true); ptr+=2;
                 dv.setUint16(ptr, packed[2], true); ptr+=2;
