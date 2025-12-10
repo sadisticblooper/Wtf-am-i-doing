@@ -4,6 +4,7 @@ import { halfToFloat, parseCompressedQuaternion, float32ToFloat16, compressQuate
 export class AnimationParser {
     constructor() {
         this.originalFileBuffer = null;
+        this.originalHeaderBuffer = null; // Keep this for backward compatibility
         this.headerStart = 0;
         this.headerEnd = 0;
         this.animationDataStart = 0;
@@ -61,6 +62,9 @@ export class AnimationParser {
             this.headerEnd = offset;
             this.animationDataStart = this.headerEnd;
             this.animationDataEnd = this.headerEnd + (this.origFramesCount * this.frameSize);
+            
+            // Store the original header buffer (for backward compatibility)
+            this.originalHeaderBuffer = arrayBuffer.slice(0, this.headerEnd);
             
             // 3. Parse animation data
             const frames = [];
@@ -132,8 +136,10 @@ export class AnimationParser {
         
         // Update frame count in the copied header
         // Calculate offset within header where frame count is stored
-        const headerFrameCountOffset = writePtr + (this.headerEnd - this.headerStart - (this.bonesCount * 2) - 8);
-        finalDv.setInt32(headerFrameCountOffset, framesCount, true);
+        // It's at: headerStart + 8 (magic) + 2 (arrayCount) + (arrayCount * 8) (garbage)
+        const arrayCount = origDataView.getInt16(this.headerStart + 8, true);
+        const frameCountOffset = writePtr + 8 + 2 + (arrayCount * 8);
+        finalDv.setInt32(frameCountOffset, framesCount, true);
         
         writePtr += headerSize;
         
