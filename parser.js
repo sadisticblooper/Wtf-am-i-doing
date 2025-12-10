@@ -1,48 +1,72 @@
+
 import { halfToFloat, parseCompressedQuaternion, float32ToFloat16, compressQuaternion } from './utils.js';
 
 export class AnimationParser {
     constructor() {
-        this.originalHeaderBuffer = null;
+        this.originalFileBuffer = null;
+        this.headerStart = 0;
+        this.headerEnd = 0;
+        this.animationDataStart = 0;
+        this.animationDataEnd = 0;
         this.boneIds = [];
+        this.bonesCount = 0;
+        this.origFramesCount = 0;
         this.EXPECTED_HEADER = 457546134634734n;
+        this.frameSize = 0; // bonesCount * 12
     }
 
     async parse(arrayBuffer) {
         try {
+            this.originalFileBuffer = arrayBuffer;
             const dataView = new DataView(arrayBuffer);
-            let offset = 0;
+            
+            // 1. Find header (it might not be at position 0)
+            this.headerStart = -1;
+            for(let i = 0; i < arrayBuffer.byteLength - 8; i++) {
+                if (dataView.getBigUint64(i, true) === this.EXPECTED_HEADER) {
+                    this.headerStart = i;
+                    break;
+                }
+            }
+            
+            // Fallback: check position 0
+            if (this.headerStart === -1 && dataView.getBigUint64(0, true) === this.EXPECTED_HEADER) {
+                this.headerStart = 0;
+            }
+            
+            if (this.headerStart === -1) {
+                throw new Error('Invalid file signature');
+            }
 
-            const header = dataView.getBigInt64(offset, true);
-            if (header !== this.EXPECTED_HEADER) throw new Error('Invalid file signature');
-
-            // Find structure to preserve header
-            let tempOffset = 8;
-            const arrayCount = dataView.getInt16(tempOffset, true); tempOffset += 2;
+            let offset = this.headerStart + 8; // Skip magic
+            
+            // 2. Parse header structure
+            const arrayCount = dataView.getInt16(offset, true); offset += 2;
             const garbageSize = arrayCount * 8;
-            const headerEnd = 8 + 2 + garbageSize; 
+            offset += garbageSize;
             
-            offset = headerEnd;
-            const framesCount = dataView.getInt32(offset, true); offset += 4;
-            const bonesCount = dataView.getInt32(offset, true); offset += 4;
+            this.origFramesCount = dataView.getInt32(offset, true); offset += 4;
+            this.bonesCount = dataView.getInt32(offset, true); offset += 4;
             
-            // Store the header exactly as is (up to frame count)
-            // But we need to include the bone IDs in preservation if we want a perfect copy base
-            // The file structure: [Header][Frames][Bones][BoneIDs array][FRAME DATA]
+            this.frameSize = this.bonesCount * 12;
             
-            // Let's capture bone IDs too
+            // Store bone IDs
             this.boneIds = [];
-            for (let i = 0; i < bonesCount; i++) {
+            for (let i = 0; i < this.bonesCount; i++) {
                 this.boneIds.push(dataView.getInt16(offset, true));
                 offset += 2;
             }
-
-            // Save everything UP TO the start of frame data as the "Header Template"
-            this.originalHeaderBuffer = arrayBuffer.slice(0, offset);
-
+            
+            // Mark where header ends and animation data starts
+            this.headerEnd = offset;
+            this.animationDataStart = this.headerEnd;
+            this.animationDataEnd = this.headerEnd + (this.origFramesCount * this.frameSize);
+            
+            // 3. Parse animation data
             const frames = [];
-            for (let frameIndex = 0; frameIndex < framesCount; frameIndex++) {
+            for (let frameIndex = 0; frameIndex < this.origFramesCount; frameIndex++) {
                 const frameBones = [];
-                for (let boneIndex = 0; boneIndex < bonesCount; boneIndex++) {
+                for (let boneIndex = 0; boneIndex < this.bonesCount; boneIndex++) {
                     const px = dataView.getUint16(offset, true); offset += 2;
                     const py = dataView.getUint16(offset, true); offset += 2;
                     const pz = dataView.getUint16(offset, true); offset += 2;
@@ -61,8 +85,8 @@ export class AnimationParser {
 
             return {
                 frames,
-                framesCount,
-                bonesCount,
+                framesCount: this.origFramesCount,
+                bonesCount: this.bonesCount,
                 boneIds: this.boneIds
             };
         } catch (error) {
@@ -72,58 +96,83 @@ export class AnimationParser {
     }
 
     repack(animationData) {
-        if (!animationData || !this.originalHeaderBuffer) {
+        if (!animationData || !this.originalFileBuffer) {
             throw new Error("Missing Base File header or Animation Data");
         }
 
-        const bonesCount = animationData.bonesCount;
         const framesCount = animationData.framesCount;
+        const bodySize = framesCount * this.frameSize;
+        const origDataView = new DataView(this.originalFileBuffer);
         
-        // 1. Prepare Header
-        // Copy the original header
-        const headerSize = this.originalHeaderBuffer.byteLength;
-        const bodySize = framesCount * bonesCount * 12;
-        const finalBuffer = new Uint8Array(headerSize + bodySize);
+        // 1. Calculate total size
+        const preHeaderSize = this.headerStart; // Data before the header
+        const headerSize = this.headerEnd - this.headerStart; // Header size
+        const footerSize = this.originalFileBuffer.byteLength - this.animationDataEnd; // Data after animation
         
-        // Set Header
-        finalBuffer.set(new Uint8Array(this.originalHeaderBuffer), 0);
+        const totalSize = preHeaderSize + headerSize + bodySize + footerSize;
+        const finalBuffer = new Uint8Array(totalSize);
+        const finalDv = new DataView(finalBuffer.buffer);
         
-        // Update Frames Count in the header (It's located at HeaderEnd)
-        // We need to recalculate where Frame Count is stored.
-        // It is after [Magic 8] + [ArrCount 2] + [ArrCount * 8]
-        const dv = new DataView(finalBuffer.buffer);
-        const arrCount = dv.getInt16(8, true);
-        const frameCountOffset = 8 + 2 + (arrCount * 8);
-        dv.setInt32(frameCountOffset, framesCount, true);
+        let writePtr = 0;
         
-        // 2. Write Body
-        let ptr = headerSize;
-        const boneIds = this.boneIds; // Use IDs from base file
-
-        for(let f=0; f<framesCount; f++) {
+        // 2. Copy pre-header data (if any)
+        if (preHeaderSize > 0) {
+            finalBuffer.set(
+                new Uint8Array(this.originalFileBuffer.slice(0, this.headerStart)), 
+                writePtr
+            );
+            writePtr += preHeaderSize;
+        }
+        
+        // 3. Copy header (with updated frame count)
+        const headerBytes = new Uint8Array(
+            this.originalFileBuffer.slice(this.headerStart, this.headerEnd)
+        );
+        finalBuffer.set(headerBytes, writePtr);
+        
+        // Update frame count in the copied header
+        // Calculate offset within header where frame count is stored
+        const headerFrameCountOffset = writePtr + (this.headerEnd - this.headerStart - (this.bonesCount * 2) - 8);
+        finalDv.setInt32(headerFrameCountOffset, framesCount, true);
+        
+        writePtr += headerSize;
+        
+        // 4. Write new animation body
+        for(let f = 0; f < framesCount; f++) {
             const frame = animationData.frames[f];
-            // Sort frame bones map for O(1) access
             const boneMap = {};
             if(frame.bones) frame.bones.forEach(b => boneMap[b.boneId] = b);
-
-            for(let b=0; b<bonesCount; b++) {
-                const id = boneIds[b];
-                // Use data from GLTF import or fallback to identity
+            
+            for(let b = 0; b < this.bonesCount; b++) {
+                const id = this.boneIds[b];
                 const boneData = boneMap[id] || { position: [0,0,0], rotation: [0,0,0,1] };
-
-                // Pos
-                dv.setUint16(ptr, float32ToFloat16(boneData.position[0]), true); ptr+=2;
-                dv.setUint16(ptr, float32ToFloat16(boneData.position[1]), true); ptr+=2;
-                dv.setUint16(ptr, float32ToFloat16(boneData.position[2]), true); ptr+=2;
-
-                // Rot
-                const packed = compressQuaternion(boneData.rotation[0], boneData.rotation[1], boneData.rotation[2], boneData.rotation[3]);
-                dv.setUint16(ptr, packed[0], true); ptr+=2;
-                dv.setUint16(ptr, packed[1], true); ptr+=2;
-                dv.setUint16(ptr, packed[2], true); ptr+=2;
+                
+                // Position (float16)
+                finalDv.setUint16(writePtr, float32ToFloat16(boneData.position[0]), true); writePtr += 2;
+                finalDv.setUint16(writePtr, float32ToFloat16(boneData.position[1]), true); writePtr += 2;
+                finalDv.setUint16(writePtr, float32ToFloat16(boneData.position[2]), true); writePtr += 2;
+                
+                // Rotation (compressed)
+                const packed = compressQuaternion(
+                    boneData.rotation[0], 
+                    boneData.rotation[1], 
+                    boneData.rotation[2], 
+                    boneData.rotation[3]
+                );
+                finalDv.setUint16(writePtr, packed[0], true); writePtr += 2;
+                finalDv.setUint16(writePtr, packed[1], true); writePtr += 2;
+                finalDv.setUint16(writePtr, packed[2], true); writePtr += 2;
             }
         }
-
+        
+        // 5. Copy footer data (if any)
+        if (footerSize > 0) {
+            finalBuffer.set(
+                new Uint8Array(this.originalFileBuffer.slice(this.animationDataEnd)),
+                writePtr
+            );
+        }
+        
         return finalBuffer;
     }
 }
