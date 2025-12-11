@@ -11,12 +11,9 @@ export class GLTFHandler {
 
     // --- IMPORT: GLTF -> AnimationData ---
     async importGLTF(file, fps = 30) {
-        // FIX: Read as ArrayBuffer and use .parse() instead of .load()
-        // This prevents incorrect MIME-type detection or "Unexpected token" JSON errors on .glb files
         const buffer = await file.arrayBuffer();
         
         return new Promise((resolve, reject) => {
-            // Resource path is empty string because we expect embedded data or GLB
             this.loader.parse(buffer, '', (gltf) => {
                 
                 if (!gltf.animations || gltf.animations.length === 0) {
@@ -130,11 +127,12 @@ export class GLTFHandler {
 
     buildSkeletonHierarchy() {
         const lines = SKELETON_DEFINITION.split('\n').filter(l => l.trim().length > 0);
-        const stack = [];
-        const bones = [];
-        let root = null;
-
+        const boneNodes = [];
+        
+        // First pass: parse all bones
         lines.forEach(line => {
+            if (!line.trim()) return;
+            
             const depth = line.search(/\S|$/) / 2;
             const nameMatch = line.match(/"([^"]+)"/);
             const posMatch = line.match(/G\.Pos:\(([^)]+)\)/);
@@ -143,26 +141,50 @@ export class GLTFHandler {
             const name = nameMatch[1];
             const pos = posMatch ? posMatch[1].split(',').map(Number) : [0,0,0];
 
+            boneNodes.push({
+                name: name,
+                level: depth,
+                globalPos: new THREE.Vector3(pos[0], pos[1], pos[2])
+            });
+        });
+
+        const bones = [];
+        const stack = [];
+        let root = null;
+
+        boneNodes.forEach(node => {
             const bone = new THREE.Bone();
-            bone.name = name;
+            bone.name = node.name;
             bones.push(bone);
 
-            if (depth === 0) {
+            if (node.level === 0) {
                 root = bone;
-                bone.position.set(pos[0], pos[1], pos[2]);
-                stack[0] = { node: bone, gPos: new THREE.Vector3(...pos) };
+                bone.position.copy(node.globalPos);
+                stack[0] = { bone: bone, level: node.level, globalPos: node.globalPos.clone() };
             } else {
-                const parentInfo = stack[depth - 1];
-                const parent = parentInfo.node;
-                const gPos = new THREE.Vector3(...pos);
+                // Find parent based on indentation level
+                while (stack.length > 0 && stack[stack.length - 1].level >= node.level) {
+                    stack.pop();
+                }
                 
-                parent.add(bone);
-                const localPos = gPos.clone().sub(parentInfo.gPos);
-                bone.position.copy(localPos);
-                
-                stack[depth] = { node: bone, gPos: gPos };
+                if (stack.length > 0) {
+                    const parentInfo = stack[stack.length - 1];
+                    const parent = parentInfo.bone;
+                    
+                    // Calculate local position
+                    const localPos = node.globalPos.clone().sub(parentInfo.globalPos);
+                    parent.add(bone);
+                    bone.position.copy(localPos);
+                    
+                    stack.push({ bone: bone, level: node.level, globalPos: node.globalPos.clone() });
+                }
             }
         });
+
+        // Update matrices
+        if (root) {
+            root.updateMatrixWorld(true);
+        }
 
         return { root, bones };
     }
