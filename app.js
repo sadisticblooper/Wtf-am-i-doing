@@ -1,8 +1,123 @@
-
+import * as THREE from 'three';
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { animationParser } from './parser.js';
 import { gltfHandler } from './gltf-handler.js';
-import { SceneController } from './scene.js';
+import { SKELETON_DEFINITION, NAME_TO_ID } from './constants.js';
 
+// --- Scene Logic ---
+class SceneController {
+    constructor(containerId) {
+        this.container = document.getElementById(containerId);
+        this.bones = {}; 
+        this.boneIdMap = {}; 
+        this.init();
+    }
+
+    init() {
+        this.scene = new THREE.Scene();
+        this.scene.background = new THREE.Color(0x000000);
+
+        // Grid & Helpers
+        const grid = new THREE.GridHelper(500, 50, 0x333333, 0x111111);
+        this.scene.add(grid);
+        this.scene.add(new THREE.AxesHelper(20));
+
+        // Camera
+        this.camera = new THREE.PerspectiveCamera(75, this.container.clientWidth / this.container.clientHeight, 0.1, 2000);
+        this.camera.position.set(0, 150, 300);
+
+        // Renderer
+        this.renderer = new THREE.WebGLRenderer({ antialias: true });
+        this.renderer.setSize(this.container.clientWidth, this.container.clientHeight);
+        this.container.appendChild(this.renderer.domElement);
+
+        // Controls
+        this.controls = new OrbitControls(this.camera, this.renderer.domElement);
+        this.controls.target.set(0, 100, 0);
+        this.controls.update();
+
+        // Lights
+        const dirLight = new THREE.DirectionalLight(0xffffff, 1);
+        dirLight.position.set(100, 200, 100);
+        this.scene.add(dirLight);
+        this.scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+
+        this.buildSkeleton();
+
+        window.addEventListener('resize', () => {
+            this.camera.aspect = this.container.clientWidth / this.container.clientHeight;
+            this.camera.updateProjectionMatrix();
+            this.renderer.setSize(this.container.clientWidth, this.container.clientHeight);
+        });
+
+        this.animate();
+    }
+
+    buildSkeleton() {
+        const lines = SKELETON_DEFINITION.split('\n').filter(l => l.trim().length > 0);
+        const stack = [];
+        const rootBones = [];
+
+        lines.forEach(line => {
+            const depth = line.search(/\S|$/) / 2;
+            const nameMatch = line.match(/"([^"]+)"/);
+            const posMatch = line.match(/G\.Pos:\(([^)]+)\)/);
+            const rotMatch = line.match(/G\.Rot \(quat\):\(([^)]+)\)/);
+
+            if (!nameMatch) return;
+            const name = nameMatch[1];
+            
+            const pos = posMatch[1].split(',').map(parseFloat);
+            const rot = rotMatch[1].split(',').map(parseFloat);
+
+            const bone = new THREE.Bone();
+            bone.name = name;
+            
+            this.bones[name] = bone;
+            const id = NAME_TO_ID[name];
+            if (id !== undefined) this.boneIdMap[id] = bone;
+
+            if (depth === 0) {
+                this.scene.add(bone);
+                rootBones.push(bone);
+                stack[0] = bone;
+                bone.position.set(...pos);
+                bone.quaternion.set(...rot);
+            } else {
+                const parent = stack[depth - 1];
+                parent.attach(bone);
+                bone.position.set(...pos); 
+                bone.quaternion.set(...rot);
+                bone.updateMatrixWorld();
+                parent.attach(bone);
+                stack[depth] = bone;
+            }
+        });
+
+        if (rootBones.length > 0) {
+            this.scene.add(new THREE.SkeletonHelper(rootBones[0]));
+        }
+    }
+
+    applyFrame(frameData) {
+        if (!frameData || !frameData.bones) return;
+        frameData.bones.forEach(boneData => {
+            const bone = this.boneIdMap[boneData.boneId];
+            if (bone) {
+                bone.position.set(...boneData.position);
+                bone.quaternion.set(...boneData.rotation);
+            }
+        });
+    }
+
+    animate() {
+        requestAnimationFrame(this.animate.bind(this));
+        this.controls.update();
+        this.renderer.render(this.scene, this.camera);
+    }
+}
+
+// --- Application Logic ---
 class App {
     constructor() {
         this.sceneController = null;
@@ -124,7 +239,6 @@ class App {
     async handleGltfImport(file) {
         if (!file) return;
         
-        // Check if we have parsed a base file
         if (!this.animationData || !animationParser.originalFileBuffer) {
             this.setStatus('Error: Load a Base File first!', 'error');
             return;
@@ -135,12 +249,8 @@ class App {
 
         try {
             const newData = await gltfHandler.importGLTF(file, this.fps);
-            
-            // Merge new frames into existing structure
             this.animationData.frames = newData.frames;
             this.animationData.framesCount = newData.framesCount;
-            // Note: We keep bonesCount and IDs from base file to ensure compatibility
-            
             this.resetPlaybackState();
             this.setStatus(`Imported ${newData.framesCount} frames from GLTF`, 'success');
 
@@ -166,7 +276,6 @@ class App {
     enableControls(enabled) {
         this.els.btnExport.disabled = !enabled;
         this.els.btnCompile.disabled = !enabled;
-        // GLTF import should be available if we have a base file
         this.els.btnImport.disabled = !enabled;
     }
 
