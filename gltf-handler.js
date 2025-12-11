@@ -9,8 +9,13 @@ export class GLTFHandler {
         this.exporter = new GLTFExporter();
     }
 
+    // Helper function from lengthenAnimation logic
+    gcd(a, b) {
+        return b === 0 ? a : this.gcd(b, a % b);
+    }
+
     // --- IMPORT: GLTF -> AnimationData ---
-    async importGLTF(file, fps = 30) {
+    async importGLTF(file, fps = 30, originalAnimationData = null) {
         const buffer = await file.arrayBuffer();
         
         return new Promise((resolve, reject) => {
@@ -62,10 +67,43 @@ export class GLTFHandler {
                     frames.push({ bones: frameBones });
                 }
 
+                // Handle trailing/remaining data multiplication if original animation exists
+                let trailingDataInfo = '';
+                if (originalAnimationData && originalAnimationData.originalFileBuffer) {
+                    const originalFrames = originalAnimationData.framesCount || 0;
+                    const factor = totalFrames / originalFrames;
+                    
+                    if (factor > 1 && originalAnimationData.trailingData) {
+                        const secondaryFactor = Math.ceil(factor);
+                        trailingDataInfo = ` (trailing data ×${secondaryFactor})`;
+                        
+                        // Multiply trailing data like in lengthenAnimation
+                        if (secondaryFactor > 1 && originalAnimationData.trailingData.byteLength > 0) {
+                            const trailingChunks = [];
+                            for (let i = 0; i < secondaryFactor; i++) {
+                                trailingChunks.push(originalAnimationData.trailingData);
+                            }
+                            const multipliedTrailingData = this.concatArrayBuffers(trailingChunks);
+                            
+                            resolve({
+                                frames,
+                                framesCount: totalFrames,
+                                bonesCount: sceneBones.length,
+                                trailingData: multipliedTrailingData,
+                                trailingDataMultiplied: secondaryFactor
+                            });
+                            return;
+                        }
+                    }
+                }
+
+                console.log(`Imported ${totalFrames} frames from GLTF${trailingDataInfo}`);
+
                 resolve({
                     frames,
                     framesCount: totalFrames,
-                    bonesCount: sceneBones.length
+                    bonesCount: sceneBones.length,
+                    trailingData: null
                 });
 
             }, (err) => reject(err));
@@ -242,6 +280,28 @@ export class GLTFHandler {
         skinnedMesh.bind(skeleton);
         
         return skinnedMesh;
+    }
+
+    // Helper function to concatenate ArrayBuffers (from lengthenAnimation logic)
+    concatArrayBuffers(buffers) {
+        if (!buffers || buffers.length === 0) {
+            return new ArrayBuffer(0);
+        }
+        
+        if (buffers.length === 1) {
+            return buffers[0];
+        }
+        
+        const totalLength = buffers.reduce((sum, buffer) => sum + buffer.byteLength, 0);
+        const result = new Uint8Array(totalLength);
+        
+        let offset = 0;
+        for (const buffer of buffers) {
+            result.set(new Uint8Array(buffer), offset);
+            offset += buffer.byteLength;
+        }
+        
+        return result.buffer;
     }
 }
 
