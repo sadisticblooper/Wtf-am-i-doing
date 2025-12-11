@@ -1,10 +1,104 @@
+// --- Utils / Math Helpers ---
 
-import { halfToFloat, parseCompressedQuaternion, float32ToFloat16, compressQuaternion } from './utils.js';
+function halfToFloat(h) {
+    const s = (h & 0x8000) >> 15;
+    const e = (h & 0x7c00) >> 10;
+    const f = h & 0x03ff;
+    if (e === 0) return (s ? -1 : 1) * Math.pow(2, -14) * (f / Math.pow(2, 10));
+    else if (e === 0x1f) return f ? NaN : (s ? -1 : 1) * Infinity;
+    return (s ? -1 : 1) * Math.pow(2, e - 15) * (1 + f / Math.pow(2, 10));
+}
 
-export class AnimationParser {
+function float32ToFloat16(val) {
+    const floatView = new Float32Array(1);
+    const int32View = new Int32Array(floatView.buffer);
+    floatView[0] = val;
+    const x = int32View[0];
+    const bits = (x >> 16) & 0x8000;
+    let m = (x >> 12) & 0x07ff;
+    const e = (x >> 23) & 0xff;
+    if (e < 103) return bits;
+    if (e > 142) {
+        if (e !== 255) return bits | 0x7c00;
+        return bits | 0x7c00 | (m !== 0 ? 1 : 0);
+    }
+    if (e < 113) {
+        m |= 0x0800;
+        return bits | ((m >> (114 - e)) + ((m >> (113 - e)) & 1));
+    }
+    return bits | ((e - 112) << 10) | (m >> 1);
+}
+
+function parseCompressedQuaternion(v0, v1, v2) {
+    const scale = 1.0 / 32767.0;
+    const maxValue = 1.4142135;
+    const shift = 0.70710677;
+
+    const missing = (v0 >> 13) & 3;
+    const signBit = (v0 >> 15) & 1;
+
+    const a = ((v1 >> 14) + 4 * (v0 & 0x1fff)) * scale * maxValue - shift;
+    const b = ((v2 >> 15) + 2 * (v1 & 0x3fff)) * scale * maxValue - shift;
+    const c = (v2 & 0x7fff) * scale * maxValue - shift;
+
+    const dSquared = 1.0 - (a * a + b * b + c * c);
+    let d = dSquared > 0 ? Math.sqrt(dSquared) : 0;
+
+    if (signBit === 1) d = -d;
+
+    switch (missing) {
+        case 0: return [d, a, b, c];
+        case 1: return [a, d, b, c];
+        case 2: return [a, b, d, c];
+        case 3: return [a, b, c, d];
+        default: return [0, 0, 0, 1];
+    }
+}
+
+function compressQuaternion(q0, q1, q2, q3) {
+    // Normalize
+    let len = Math.sqrt(q0*q0 + q1*q1 + q2*q2 + q3*q3);
+    if (len === 0) { q0=0; q1=0; q2=0; q3=1; len=1; }
+    q0/=len; q1/=len; q2/=len; q3/=len;
+
+    const arr = [q0, q1, q2, q3];
+    let maxIdx = 0;
+    let maxVal = Math.abs(q0);
+    for(let i=1; i<4; i++){
+        if(Math.abs(arr[i]) > maxVal) { maxVal = Math.abs(arr[i]); maxIdx = i; }
+    }
+
+    const signBit = arr[maxIdx] < 0 ? 1 : 0;
+    let a, b, c;
+
+    if (maxIdx === 0)      { a=q1; b=q2; c=q3; }
+    else if (maxIdx === 1) { a=q0; b=q2; c=q3; }
+    else if (maxIdx === 2) { a=q0; b=q1; c=q3; }
+    else                   { a=q0; b=q1; c=q2; }
+
+    const scale = 1.0 / 32767.0;
+    const maxValue = 1.4142135;
+    const shift = 0.70710677;
+    const factor = 1.0 / (scale * maxValue);
+
+    const clamp = (v) => Math.max(0, Math.min(v, 0x7FFF));
+    const aBits = clamp(Math.round((a + shift) * factor));
+    const bBits = clamp(Math.round((b + shift) * factor));
+    const cBits = clamp(Math.round((c + shift) * factor));
+
+    const v0 = (signBit << 15) | (maxIdx << 13) | (aBits >> 2);
+    const v1 = ((aBits & 3) << 14) | (bBits >> 1);
+    const v2 = ((bBits & 1) << 15) | cBits;
+
+    return [v0, v1, v2];
+}
+
+// --- Main Parser Class ---
+
+class AnimationParser {
     constructor() {
         this.originalFileBuffer = null;
-        this.originalHeaderBuffer = null; // Keep this for backward compatibility
+        this.originalHeaderBuffer = null;
         this.headerStart = 0;
         this.headerEnd = 0;
         this.animationDataStart = 0;
@@ -13,7 +107,7 @@ export class AnimationParser {
         this.bonesCount = 0;
         this.origFramesCount = 0;
         this.EXPECTED_HEADER = 457546134634734n;
-        this.frameSize = 0; // bonesCount * 12
+        this.frameSize = 0; 
     }
 
     async parse(arrayBuffer) {
@@ -21,7 +115,7 @@ export class AnimationParser {
             this.originalFileBuffer = arrayBuffer;
             const dataView = new DataView(arrayBuffer);
             
-            // 1. Find header (it might not be at position 0)
+            // 1. Find header
             this.headerStart = -1;
             for(let i = 0; i < arrayBuffer.byteLength - 8; i++) {
                 if (dataView.getBigUint64(i, true) === this.EXPECTED_HEADER) {
@@ -30,7 +124,6 @@ export class AnimationParser {
                 }
             }
             
-            // Fallback: check position 0
             if (this.headerStart === -1 && dataView.getBigUint64(0, true) === this.EXPECTED_HEADER) {
                 this.headerStart = 0;
             }
@@ -41,7 +134,7 @@ export class AnimationParser {
 
             let offset = this.headerStart + 8; // Skip magic
             
-            // 2. Parse header structure
+            // 2. Parse header
             const arrayCount = dataView.getInt16(offset, true); offset += 2;
             const garbageSize = arrayCount * 8;
             offset += garbageSize;
@@ -51,22 +144,18 @@ export class AnimationParser {
             
             this.frameSize = this.bonesCount * 12;
             
-            // Store bone IDs
             this.boneIds = [];
             for (let i = 0; i < this.bonesCount; i++) {
                 this.boneIds.push(dataView.getInt16(offset, true));
                 offset += 2;
             }
             
-            // Mark where header ends and animation data starts
             this.headerEnd = offset;
             this.animationDataStart = this.headerEnd;
             this.animationDataEnd = this.headerEnd + (this.origFramesCount * this.frameSize);
-            
-            // Store the original header buffer (for backward compatibility)
             this.originalHeaderBuffer = arrayBuffer.slice(0, this.headerEnd);
             
-            // 3. Parse animation data
+            // 3. Parse animation body
             const frames = [];
             for (let frameIndex = 0; frameIndex < this.origFramesCount; frameIndex++) {
                 const frameBones = [];
@@ -108,10 +197,9 @@ export class AnimationParser {
         const bodySize = framesCount * this.frameSize;
         const origDataView = new DataView(this.originalFileBuffer);
         
-        // 1. Calculate total size
-        const preHeaderSize = this.headerStart; // Data before the header
-        const headerSize = this.headerEnd - this.headerStart; // Header size
-        const footerSize = this.originalFileBuffer.byteLength - this.animationDataEnd; // Data after animation
+        const preHeaderSize = this.headerStart; 
+        const headerSize = this.headerEnd - this.headerStart;
+        const footerSize = this.originalFileBuffer.byteLength - this.animationDataEnd; 
         
         const totalSize = preHeaderSize + headerSize + bodySize + footerSize;
         const finalBuffer = new Uint8Array(totalSize);
@@ -119,31 +207,24 @@ export class AnimationParser {
         
         let writePtr = 0;
         
-        // 2. Copy pre-header data (if any)
+        // Copy pre-header
         if (preHeaderSize > 0) {
-            finalBuffer.set(
-                new Uint8Array(this.originalFileBuffer.slice(0, this.headerStart)), 
-                writePtr
-            );
+            finalBuffer.set(new Uint8Array(this.originalFileBuffer.slice(0, this.headerStart)), writePtr);
             writePtr += preHeaderSize;
         }
         
-        // 3. Copy header (with updated frame count)
-        const headerBytes = new Uint8Array(
-            this.originalFileBuffer.slice(this.headerStart, this.headerEnd)
-        );
+        // Copy header
+        const headerBytes = new Uint8Array(this.originalFileBuffer.slice(this.headerStart, this.headerEnd));
         finalBuffer.set(headerBytes, writePtr);
         
-        // Update frame count in the copied header
-        // Calculate offset within header where frame count is stored
-        // It's at: headerStart + 8 (magic) + 2 (arrayCount) + (arrayCount * 8) (garbage)
+        // Update frame count
         const arrayCount = origDataView.getInt16(this.headerStart + 8, true);
         const frameCountOffset = writePtr + 8 + 2 + (arrayCount * 8);
         finalDv.setInt32(frameCountOffset, framesCount, true);
         
         writePtr += headerSize;
         
-        // 4. Write new animation body
+        // Write animation body
         for(let f = 0; f < framesCount; f++) {
             const frame = animationData.frames[f];
             const boneMap = {};
@@ -153,30 +234,20 @@ export class AnimationParser {
                 const id = this.boneIds[b];
                 const boneData = boneMap[id] || { position: [0,0,0], rotation: [0,0,0,1] };
                 
-                // Position (float16)
                 finalDv.setUint16(writePtr, float32ToFloat16(boneData.position[0]), true); writePtr += 2;
                 finalDv.setUint16(writePtr, float32ToFloat16(boneData.position[1]), true); writePtr += 2;
                 finalDv.setUint16(writePtr, float32ToFloat16(boneData.position[2]), true); writePtr += 2;
                 
-                // Rotation (compressed)
-                const packed = compressQuaternion(
-                    boneData.rotation[0], 
-                    boneData.rotation[1], 
-                    boneData.rotation[2], 
-                    boneData.rotation[3]
-                );
+                const packed = compressQuaternion(boneData.rotation[0], boneData.rotation[1], boneData.rotation[2], boneData.rotation[3]);
                 finalDv.setUint16(writePtr, packed[0], true); writePtr += 2;
                 finalDv.setUint16(writePtr, packed[1], true); writePtr += 2;
                 finalDv.setUint16(writePtr, packed[2], true); writePtr += 2;
             }
         }
         
-        // 5. Copy footer data (if any)
+        // Copy footer
         if (footerSize > 0) {
-            finalBuffer.set(
-                new Uint8Array(this.originalFileBuffer.slice(this.animationDataEnd)),
-                writePtr
-            );
+            finalBuffer.set(new Uint8Array(this.originalFileBuffer.slice(this.animationDataEnd)), writePtr);
         }
         
         return finalBuffer;
