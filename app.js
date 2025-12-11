@@ -10,6 +10,9 @@ class SceneController {
         this.container = document.getElementById(containerId);
         this.bones = {}; 
         this.boneIdMap = {}; 
+        this.skeletonVisible = false;
+        this.skeletonHelper = null;
+        this.rootGroup = null;
         this.init();
     }
 
@@ -42,8 +45,6 @@ class SceneController {
         this.scene.add(dirLight);
         this.scene.add(new THREE.AmbientLight(0xffffff, 0.5));
 
-        this.buildSkeleton();
-
         window.addEventListener('resize', () => {
             this.camera.aspect = this.container.clientWidth / this.container.clientHeight;
             this.camera.updateProjectionMatrix();
@@ -53,12 +54,41 @@ class SceneController {
         this.animate();
     }
 
-    buildSkeleton() {
-        const lines = SKELETON_DEFINITION.split('\n').filter(l => l.trim().length > 0);
-        const stack = [];
-        const rootBones = [];
+    setSkeletonVisibility(visible) {
+        if (visible && !this.skeletonVisible) {
+            this.buildSkeleton();
+            this.skeletonVisible = true;
+        } else if (!visible && this.skeletonVisible) {
+            this.clearSkeleton();
+            this.skeletonVisible = false;
+        }
+    }
 
+    clearSkeleton() {
+        if (this.rootGroup) {
+            this.scene.remove(this.rootGroup);
+            this.rootGroup = null;
+        }
+        
+        if (this.skeletonHelper) {
+            this.scene.remove(this.skeletonHelper);
+            this.skeletonHelper = null;
+        }
+        
+        this.bones = {};
+        this.boneIdMap = {};
+    }
+
+    buildSkeleton() {
+        this.clearSkeleton();
+        
+        const lines = SKELETON_DEFINITION.split('\n').filter(l => l.trim().length > 0);
+        const boneNodes = [];
+        
+        // First pass: parse all bones
         lines.forEach(line => {
+            if (!line.trim()) return;
+            
             const depth = line.search(/\S|$/) / 2;
             const nameMatch = line.match(/"([^"]+)"/);
             const posMatch = line.match(/G\.Pos:\(([^)]+)\)/);
@@ -70,37 +100,87 @@ class SceneController {
             const pos = posMatch[1].split(',').map(parseFloat);
             const rot = rotMatch[1].split(',').map(parseFloat);
 
-            const bone = new THREE.Bone();
-            bone.name = name;
-            
-            this.bones[name] = bone;
-            const id = NAME_TO_ID[name];
-            if (id !== undefined) this.boneIdMap[id] = bone;
-
-            if (depth === 0) {
-                this.scene.add(bone);
-                rootBones.push(bone);
-                stack[0] = bone;
-                bone.position.set(...pos);
-                bone.quaternion.set(...rot);
-            } else {
-                const parent = stack[depth - 1];
-                parent.attach(bone);
-                bone.position.set(...pos); 
-                bone.quaternion.set(...rot);
-                bone.updateMatrixWorld();
-                parent.attach(bone);
-                stack[depth] = bone;
+            if (pos.length === 3 && rot.length === 4) {
+                boneNodes.push({
+                    name: name,
+                    level: depth,
+                    globalPos: new THREE.Vector3(pos[0], pos[1], pos[2]),
+                    globalRot: new THREE.Quaternion(rot[0], rot[1], rot[2], rot[3])
+                });
             }
         });
 
-        if (rootBones.length > 0) {
-            this.scene.add(new THREE.SkeletonHelper(rootBones[0]));
+        // Build hierarchy
+        this.rootGroup = new THREE.Group();
+        this.scene.add(this.rootGroup);
+        
+        const stack = [];
+        
+        boneNodes.forEach(node => {
+            const bone = new THREE.Bone();
+            bone.name = node.name;
+            
+            // Store original global transform
+            bone.userData = {
+                originalGlobalPos: node.globalPos.clone(),
+                originalGlobalRot: node.globalRot.clone()
+            };
+            
+            this.bones[node.name] = bone;
+            const id = NAME_TO_ID[node.name];
+            if (id !== undefined) this.boneIdMap[id] = bone;
+            
+            // Find parent based on indentation level
+            while (stack.length > 0 && stack[stack.length - 1].level >= node.level) {
+                stack.pop();
+            }
+            
+            if (stack.length > 0) {
+                const parent = stack[stack.length - 1].bone;
+                parent.add(bone);
+                
+                // Calculate local transform from global positions
+                const parentMatrix = new THREE.Matrix4().compose(
+                    parent.userData.originalGlobalPos,
+                    parent.userData.originalGlobalRot,
+                    new THREE.Vector3(1, 1, 1)
+                ).invert();
+                
+                const globalMatrix = new THREE.Matrix4().compose(
+                    node.globalPos,
+                    node.globalRot,
+                    new THREE.Vector3(1, 1, 1)
+                );
+                
+                const localMatrix = parentMatrix.multiply(globalMatrix);
+                const localPos = new THREE.Vector3();
+                const localRot = new THREE.Quaternion();
+                const localScale = new THREE.Vector3();
+                localMatrix.decompose(localPos, localRot, localScale);
+                
+                bone.position.copy(localPos);
+                bone.quaternion.copy(localRot);
+            } else {
+                this.rootGroup.add(bone);
+                bone.position.copy(node.globalPos);
+                bone.quaternion.copy(node.globalRot);
+            }
+            
+            stack.push({ bone: bone, level: node.level });
+        });
+
+        // Update all matrices
+        this.rootGroup.updateMatrixWorld(true);
+        
+        if (boneNodes.length > 0 && this.rootGroup.children.length > 0) {
+            this.skeletonHelper = new THREE.SkeletonHelper(this.rootGroup.children[0]);
+            this.scene.add(this.skeletonHelper);
         }
     }
 
     applyFrame(frameData) {
-        if (!frameData || !frameData.bones) return;
+        if (!frameData || !frameData.bones || !this.rootGroup) return;
+        
         frameData.bones.forEach(boneData => {
             const bone = this.boneIdMap[boneData.boneId];
             if (bone) {
@@ -108,6 +188,9 @@ class SceneController {
                 bone.quaternion.set(...boneData.rotation);
             }
         });
+        
+        // Update matrices after applying animation
+        this.rootGroup.updateMatrixWorld(true);
     }
 
     animate() {
@@ -223,6 +306,9 @@ class App {
             const buffer = await file.arrayBuffer();
             this.animationData = await animationParser.parse(buffer);
             
+            // Show skeleton only when file is successfully loaded
+            this.sceneController.setSkeletonVisibility(true);
+            
             this.resetPlaybackState();
             this.setStatus('Base File Loaded', 'success');
             this.enableControls(true);
@@ -232,6 +318,8 @@ class App {
             this.setStatus('Error: ' + err.message, 'error');
             this.els.fileName.textContent = 'Load Failed';
             this.enableControls(false);
+            // Hide skeleton if load failed
+            this.sceneController.setSkeletonVisibility(false);
         }
         this.setLoading(false);
     }
