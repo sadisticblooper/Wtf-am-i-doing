@@ -12,25 +12,22 @@
             font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; 
             background-color: #111827; 
             color: #e5e7eb; 
-            /* FIX: Use dvh (Dynamic Viewport Height) for accurate mobile height */
             height: 100vh; 
             height: 100dvh; 
             width: 100vw;
             display: flex; 
             flex-direction: column; 
-            overflow: hidden; /* Critical: Stops the whole page from scrolling, preventing the scroll-up issue */
+            overflow: hidden;
         }
 
-        /* --- Main Layout --- */
         .main-container {
             display: flex;
             flex: 1;
-            min-height: 0; /* Critical for inner scrolling to work */
+            min-height: 0;
             width: 100%;
-            overflow: hidden; /* Ensure this container doesn't overflow */
+            overflow: hidden;
         }
 
-        /* --- Sidebar --- */
         .sidebar {
             width: 300px;
             background-color: #1f2937;
@@ -55,7 +52,7 @@
 
         .sidebar-content {
             flex: 1;
-            overflow-y: auto; /* Scroll ONLY the content, not the page */
+            overflow-y: auto;
             padding: 20px;
         }
 
@@ -77,7 +74,6 @@
             letter-spacing: 0.5px;
         }
 
-        /* File Drop */
         .file-drop {
             border: 2px dashed #4b5563;
             border-radius: 6px;
@@ -89,7 +85,6 @@
         .file-drop:hover { border-color: #10b981; background: rgba(16,185,129,0.05); }
         .file-info { margin-top: 8px; font-size: 13px; color: #d1d5db; word-break: break-all; }
 
-        /* Controls */
         .btn-play {
             width: 100%;
             padding: 12px;
@@ -112,7 +107,6 @@
         input[type="range"] { width: 100%; margin: 12px 0; accent-color: #10b981; cursor: pointer; }
         .row { display: flex; justify-content: space-between; font-size: 12px; color: #9ca3af; margin-bottom: 2px; }
 
-        /* --- Viewport --- */
         .viewport {
             flex: 1;
             position: relative;
@@ -121,7 +115,6 @@
         }
         #canvasContainer { width: 100%; height: 100%; outline: none; }
 
-        /* --- Footer --- */
         .footer {
             height: 60px;
             background: #1f2937;
@@ -133,7 +126,6 @@
             gap: 15px;
             flex-shrink: 0;
             z-index: 20;
-            /* Ensure it stays visible */
             position: relative;
         }
 
@@ -162,7 +154,6 @@
         .hidden { display: none; }
         .divider { width: 1px; height: 24px; background: #4b5563; margin: 0 5px; }
 
-        /* Loader */
         .loader-overlay {
             position: absolute; top: 0; left: 0; width: 100%; height: 100%;
             background: rgba(17, 24, 39, 0.8);
@@ -179,25 +170,21 @@
         @keyframes spin { to { transform: rotate(360deg); } }
         .loader-text { margin-top: 15px; color: #10b981; font-weight: bold; }
 
-        /* Mobile Adjustments */
         @media (max-width: 768px) {
             .main-container { flex-direction: column; }
             .sidebar { width: 100%; height: 50%; border-right: none; border-bottom: 1px solid #374151; }
             .viewport { height: 50%; }
-            .footer { overflow-x: auto; justify-content: flex-start; } /* Allow scrolling buttons on small screens */
+            .footer { overflow-x: auto; justify-content: flex-start; }
         }
-
     </style>
 </head>
 <body>
-
     <div class="main-container">
         <div class="sidebar">
             <div class="sidebar-header">
                 <div class="app-title"><i class="fas fa-cube"></i> SF3 Animation Tool</div>
                 <div id="statusText" class="status-line">Waiting for file...</div>
             </div>
-
             <div class="sidebar-content">
                 <div class="panel">
                     <span class="panel-label">1. Base File (Required)</span>
@@ -207,22 +194,18 @@
                     </div>
                     <input type="file" id="mainFileInput" class="hidden" accept=".bytes,.bin,.dat,.anim">
                 </div>
-
                 <div class="panel">
                     <span class="panel-label">2. Playback</span>
                     <button id="playBtn" class="btn-play"><i class="fas fa-play"></i> Play</button>
-                    
                     <div style="margin-top: 15px;">
                         <div class="row"><span>Timeline</span><span id="frameDisplay">0 / 0</span></div>
                         <input type="range" id="timeline" min="0" value="0" step="1">
                     </div>
-
                     <div style="margin-top: 5px;">
                         <div class="row"><span>Speed</span><span id="speedDisplay">30 FPS</span></div>
                         <input type="range" id="speed" min="1" max="120" value="30">
                     </div>
                 </div>
-
                 <div class="panel">
                     <span class="panel-label">Metadata</span>
                     <div class="row" style="margin-bottom:5px"><span>Bones:</span> <span id="infoBones">0</span></div>
@@ -230,7 +213,6 @@
                 </div>
             </div>
         </div>
-
         <div class="viewport">
             <div id="canvasContainer"></div>
             <div id="loader" class="loader-overlay">
@@ -239,25 +221,19 @@
             </div>
         </div>
     </div>
-
     <div class="footer">
         <input type="file" id="gltfInput" class="hidden" accept=".gltf,.glb">
-
         <button id="btnImportGltf" class="btn-footer">
             <i class="fas fa-file-upload"></i> Import GLTF Data
         </button>
-
         <button id="btnExportGltf" class="btn-footer" disabled>
             <i class="fas fa-file-download"></i> Export to GLTF
         </button>
-        
         <div class="divider"></div>
-
         <button id="btnCompile" class="btn-footer btn-primary" disabled>
             <i class="fas fa-save"></i> Compile Binary
         </button>
     </div>
-
     <script type="importmap">
         {
             "imports": {
@@ -267,6 +243,5 @@
         }
     </script>
     <script type="module" src="./app.js"></script>
-
 </body>
 </html>
