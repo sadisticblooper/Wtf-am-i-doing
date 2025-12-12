@@ -1,3 +1,5 @@
+// parser.js
+
 // --- Utils / Math Helpers ---
 
 function halfToFloat(h) {
@@ -176,11 +178,16 @@ class AnimationParser {
                 frames.push({ bones: frameBones });
             }
 
+            // Extract trailing data for potential duplication later
+            const trailingData = arrayBuffer.slice(this.animationDataEnd);
+
             return {
                 frames,
                 framesCount: this.origFramesCount,
                 bonesCount: this.bonesCount,
-                boneIds: this.boneIds
+                boneIds: this.boneIds,
+                originalFileBuffer: this.originalFileBuffer, // Added to support resize calculation
+                trailingData: trailingData                   // Added to support data multiplication
             };
         } catch (error) {
             console.error(error);
@@ -199,7 +206,16 @@ class AnimationParser {
         
         const preHeaderSize = this.headerStart; 
         const headerSize = this.headerEnd - this.headerStart;
-        const footerSize = this.originalFileBuffer.byteLength - this.animationDataEnd; 
+        
+        // Calculate footer size based on the new trailingData if it exists (for imported GLTF cases), 
+        // otherwise calculate from original buffer (for simple repack cases)
+        let footerBuffer;
+        if (animationData.trailingData) {
+            footerBuffer = new Uint8Array(animationData.trailingData);
+        } else {
+            footerBuffer = new Uint8Array(this.originalFileBuffer.slice(this.animationDataEnd));
+        }
+        const footerSize = footerBuffer.byteLength;
         
         const totalSize = preHeaderSize + headerSize + bodySize + footerSize;
         const finalBuffer = new Uint8Array(totalSize);
@@ -247,7 +263,7 @@ class AnimationParser {
         
         // Copy footer
         if (footerSize > 0) {
-            finalBuffer.set(new Uint8Array(this.originalFileBuffer.slice(this.animationDataEnd)), writePtr);
+            finalBuffer.set(footerBuffer, writePtr);
         }
         
         return finalBuffer;
