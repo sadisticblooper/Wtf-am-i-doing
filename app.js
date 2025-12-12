@@ -339,20 +339,15 @@ class App {
             // Pass original animation data to handle trailing data multiplication
             const newData = await gltfHandler.importGLTF(file, this.fps, this.animationData);
             
-            // Update animation data with new frames
+            // Update animation data with new frames AND trailing data
             this.animationData.frames = newData.frames;
             this.animationData.framesCount = newData.framesCount;
+            this.animationData.trailingData = newData.trailingData; // ← THIS IS CRITICAL
             
-            // Store trailing data if it exists
-            if (newData.trailingData) {
-                this.animationData.trailingData = newData.trailingData;
-                if (newData.trailingDataMultiplied) {
-                    this.setStatus(`Imported ${newData.framesCount} frames from GLTF (trailing data ×${newData.trailingDataMultiplied})`, 'success');
-                } else {
-                    this.setStatus(`Imported ${newData.framesCount} frames from GLTF`, 'success');
-                }
+            if (newData.trailingDataMultiplied > 0) {
+                this.setStatus(`Imported ${newData.framesCount} frames (trailing data ×${newData.trailingDataMultiplied})`, 'success');
             } else {
-                this.setStatus(`Imported ${newData.framesCount} frames from GLTF`, 'success');
+                this.setStatus(`Imported ${newData.framesCount} frames`, 'success');
             }
             
             this.resetPlaybackState();
