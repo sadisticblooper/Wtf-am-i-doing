@@ -155,6 +155,9 @@ class AnimationParser {
             this.animationDataEnd = this.headerEnd + (this.origFramesCount * this.frameSize);
             this.originalHeaderBuffer = arrayBuffer.slice(0, this.headerEnd);
             
+            // Capture original trailing data
+            const trailingData = arrayBuffer.slice(this.animationDataEnd);
+
             // 3. Parse animation body
             const frames = [];
             for (let frameIndex = 0; frameIndex < this.origFramesCount; frameIndex++) {
@@ -180,7 +183,8 @@ class AnimationParser {
                 frames,
                 framesCount: this.origFramesCount,
                 bonesCount: this.bonesCount,
-                boneIds: this.boneIds
+                boneIds: this.boneIds,
+                trailingData: trailingData
             };
         } catch (error) {
             console.error(error);
@@ -199,9 +203,16 @@ class AnimationParser {
         
         const preHeaderSize = this.headerStart; 
         const headerSize = this.headerEnd - this.headerStart;
-        const footerSize = this.originalFileBuffer.byteLength - this.animationDataEnd; 
         
-        const totalSize = preHeaderSize + headerSize + bodySize + footerSize;
+        // Determine footer buffer: Use modified trailing data if present, otherwise fallback to original
+        let footerBuffer;
+        if (animationData.trailingData && animationData.trailingData.byteLength > 0) {
+            footerBuffer = new Uint8Array(animationData.trailingData);
+        } else {
+            footerBuffer = new Uint8Array(this.originalFileBuffer.slice(this.animationDataEnd));
+        }
+        
+        const totalSize = preHeaderSize + headerSize + bodySize + footerBuffer.byteLength;
         const finalBuffer = new Uint8Array(totalSize);
         const finalDv = new DataView(finalBuffer.buffer);
         
@@ -245,9 +256,9 @@ class AnimationParser {
             }
         }
         
-        // Copy footer
-        if (footerSize > 0) {
-            finalBuffer.set(new Uint8Array(this.originalFileBuffer.slice(this.animationDataEnd)), writePtr);
+        // Copy footer (Trailing Data)
+        if (footerBuffer.byteLength > 0) {
+            finalBuffer.set(footerBuffer, writePtr);
         }
         
         return finalBuffer;
