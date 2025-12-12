@@ -1,3 +1,4 @@
+
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js';
@@ -71,16 +72,19 @@ export class GLTFHandler {
                 let trailingDataInfo = '';
                 if (originalAnimationData && originalAnimationData.originalFileBuffer) {
                     const originalFrames = originalAnimationData.framesCount || 0;
-                    const factor = totalFrames / originalFrames;
+                    const importedFrames = totalFrames;
                     
-                    if (factor > 1 && originalAnimationData.trailingData) {
-                        const secondaryFactor = Math.ceil(factor);
-                        trailingDataInfo = ` (trailing data ×${secondaryFactor})`;
+                    // Calculate how many times we need to repeat the original trailing data
+                    // to cover the imported GLTF frames (nearest higher multiple)
+                    const repetitionsNeeded = Math.ceil(importedFrames / originalFrames);
+                    
+                    if (repetitionsNeeded > 1 && originalAnimationData.trailingData) {
+                        trailingDataInfo = ` (trailing data ×${repetitionsNeeded})`;
                         
                         // Multiply trailing data like in lengthenAnimation
-                        if (secondaryFactor > 1 && originalAnimationData.trailingData.byteLength > 0) {
+                        if (originalAnimationData.trailingData.byteLength > 0) {
                             const trailingChunks = [];
-                            for (let i = 0; i < secondaryFactor; i++) {
+                            for (let i = 0; i < repetitionsNeeded; i++) {
                                 trailingChunks.push(originalAnimationData.trailingData);
                             }
                             const multipliedTrailingData = this.concatArrayBuffers(trailingChunks);
@@ -90,7 +94,7 @@ export class GLTFHandler {
                                 framesCount: totalFrames,
                                 bonesCount: sceneBones.length,
                                 trailingData: multipliedTrailingData,
-                                trailingDataMultiplied: secondaryFactor
+                                trailingDataMultiplied: repetitionsNeeded
                             });
                             return;
                         }
