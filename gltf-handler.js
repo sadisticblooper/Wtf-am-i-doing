@@ -68,41 +68,42 @@ export class GLTFHandler {
                 }
 
                 // Handle trailing/remaining data multiplication if original animation exists
-                let multipliedTrailingData = null;
-                let trailingDataMultiplied = 1;
-                
+                let trailingDataInfo = '';
                 if (originalAnimationData && originalAnimationData.originalFileBuffer) {
                     const originalFrames = originalAnimationData.framesCount || 0;
                     const factor = totalFrames / originalFrames;
                     
-                    // Only multiply if we have more frames AND there's trailing data
-                    if (factor > 1 && originalAnimationData.trailingData && 
-                        originalAnimationData.trailingData.byteLength > 0) {
+                    if (factor > 1 && originalAnimationData.trailingData) {
+                        const secondaryFactor = Math.ceil(factor);
+                        trailingDataInfo = ` (trailing data ×${secondaryFactor})`;
                         
-                        trailingDataMultiplied = Math.ceil(factor);
-                        
-                        if (trailingDataMultiplied > 1) {
-                            // Multiply trailing data
+                        // Multiply trailing data like in lengthenAnimation
+                        if (secondaryFactor > 1 && originalAnimationData.trailingData.byteLength > 0) {
                             const trailingChunks = [];
-                            for (let i = 0; i < trailingDataMultiplied; i++) {
+                            for (let i = 0; i < secondaryFactor; i++) {
                                 trailingChunks.push(originalAnimationData.trailingData);
                             }
-                            multipliedTrailingData = this.concatArrayBuffers(trailingChunks);
-                            console.log(`Trailing data multiplied by ${trailingDataMultiplied}`, 
-                                      `(original ${originalFrames} frames → new ${totalFrames} frames)`);
+                            const multipliedTrailingData = this.concatArrayBuffers(trailingChunks);
+                            
+                            resolve({
+                                frames,
+                                framesCount: totalFrames,
+                                bonesCount: sceneBones.length,
+                                trailingData: multipliedTrailingData,
+                                trailingDataMultiplied: secondaryFactor
+                            });
+                            return;
                         }
                     }
                 }
 
-                console.log(`Imported ${totalFrames} frames from GLTF${trailingDataMultiplied > 1 ? 
-                           ` (trailing data ×${trailingDataMultiplied})` : ''}`);
+                console.log(`Imported ${totalFrames} frames from GLTF${trailingDataInfo}`);
 
                 resolve({
                     frames,
                     framesCount: totalFrames,
                     bonesCount: sceneBones.length,
-                    trailingData: multipliedTrailingData || originalAnimationData?.trailingData || null,
-                    trailingDataMultiplied: trailingDataMultiplied > 1 ? trailingDataMultiplied : 0
+                    trailingData: null
                 });
 
             }, (err) => reject(err));

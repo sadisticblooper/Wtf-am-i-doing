@@ -155,9 +155,6 @@ class AnimationParser {
             this.animationDataEnd = this.headerEnd + (this.origFramesCount * this.frameSize);
             this.originalHeaderBuffer = arrayBuffer.slice(0, this.headerEnd);
             
-            // Capture original trailing data
-            const trailingData = arrayBuffer.slice(this.animationDataEnd);
-
             // 3. Parse animation body
             const frames = [];
             for (let frameIndex = 0; frameIndex < this.origFramesCount; frameIndex++) {
@@ -183,8 +180,7 @@ class AnimationParser {
                 frames,
                 framesCount: this.origFramesCount,
                 bonesCount: this.bonesCount,
-                boneIds: this.boneIds,
-                trailingData: trailingData // Pass this to GLTF Handler
+                boneIds: this.boneIds
             };
         } catch (error) {
             console.error(error);
@@ -203,20 +199,9 @@ class AnimationParser {
         
         const preHeaderSize = this.headerStart; 
         const headerSize = this.headerEnd - this.headerStart;
+        const footerSize = this.originalFileBuffer.byteLength - this.animationDataEnd; 
         
-        // --- FIX: Determine correct footer buffer and SIZE ---
-        let footerBuffer;
-        if (animationData.trailingData && animationData.trailingData.byteLength > 0) {
-            // Use the multiplied/modified trailing data
-            footerBuffer = new Uint8Array(animationData.trailingData);
-        } else {
-            // Fallback to original if no update occurred
-            footerBuffer = new Uint8Array(this.originalFileBuffer.slice(this.animationDataEnd));
-        }
-
-        // --- FIX: Calculate Total Size using the ACTUAL footer buffer length ---
-        const totalSize = preHeaderSize + headerSize + bodySize + footerBuffer.byteLength;
-        
+        const totalSize = preHeaderSize + headerSize + bodySize + footerSize;
         const finalBuffer = new Uint8Array(totalSize);
         const finalDv = new DataView(finalBuffer.buffer);
         
@@ -260,9 +245,9 @@ class AnimationParser {
             }
         }
         
-        // Copy footer (Trailing Data)
-        if (footerBuffer.byteLength > 0) {
-            finalBuffer.set(footerBuffer, writePtr);
+        // Copy footer
+        if (footerSize > 0) {
+            finalBuffer.set(new Uint8Array(this.originalFileBuffer.slice(this.animationDataEnd)), writePtr);
         }
         
         return finalBuffer;
