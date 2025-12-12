@@ -6,32 +6,176 @@
     <title>SF3 Animation Tool</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
-        /* Styles kept identical to original for consistency */
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #111827; color: #e5e7eb; height: 100vh; width: 100vw; display: flex; flex-direction: column; overflow: hidden; }
-        .main-container { display: flex; flex: 1; min-height: 0; width: 100%; overflow: hidden; }
-        .sidebar { width: 300px; background-color: #1f2937; border-right: 1px solid #374151; display: flex; flex-direction: column; flex-shrink: 0; z-index: 10; }
-        .sidebar-header { padding: 20px; background: #111827; border-bottom: 1px solid #374151; }
+        
+        body { 
+            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; 
+            background-color: #111827; 
+            color: #e5e7eb; 
+            height: 100vh; 
+            height: 100dvh; 
+            width: 100vw;
+            display: flex; 
+            flex-direction: column; 
+            overflow: hidden;
+        }
+
+        .main-container {
+            display: flex;
+            flex: 1;
+            min-height: 0;
+            width: 100%;
+            overflow: hidden;
+        }
+
+        .sidebar {
+            width: 300px;
+            background-color: #1f2937;
+            border-right: 1px solid #374151;
+            display: flex;
+            flex-direction: column;
+            flex-shrink: 0;
+            z-index: 10;
+        }
+
+        .sidebar-header {
+            padding: 20px;
+            background: #111827;
+            border-bottom: 1px solid #374151;
+            flex-shrink: 0;
+        }
+
         .app-title { font-size: 18px; font-weight: bold; color: #10b981; display: flex; align-items: center; gap: 8px; }
         .status-line { margin-top: 8px; font-size: 12px; color: #6b7280; font-family: monospace; min-height: 16px; }
-        .status-line.success { color: #10b981; } .status-line.error { color: #ef4444; }
-        .sidebar-content { flex: 1; overflow-y: auto; padding: 20px; }
-        .panel { background: #28303f; border-radius: 6px; padding: 15px; margin-bottom: 20px; border: 1px solid #374151; }
-        .panel-label { font-size: 11px; font-weight: 700; text-transform: uppercase; color: #9ca3af; margin-bottom: 10px; display: block; }
-        .file-drop { border: 2px dashed #4b5563; border-radius: 6px; padding: 20px; text-align: center; cursor: pointer; }
+        .status-line.success { color: #10b981; }
+        .status-line.error { color: #ef4444; }
+
+        .sidebar-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+        }
+
+        .panel {
+            background: #28303f;
+            border-radius: 6px;
+            padding: 15px;
+            margin-bottom: 20px;
+            border: 1px solid #374151;
+        }
+
+        .panel-label {
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            color: #9ca3af;
+            margin-bottom: 10px;
+            display: block;
+            letter-spacing: 0.5px;
+        }
+
+        .file-drop {
+            border: 2px dashed #4b5563;
+            border-radius: 6px;
+            padding: 20px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
         .file-drop:hover { border-color: #10b981; background: rgba(16,185,129,0.05); }
-        .btn-play { width: 100%; padding: 12px; background: #10b981; border: none; border-radius: 4px; color: white; font-weight: bold; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; }
-        .btn-play:hover { background: #059669; } .btn-play.paused { background: #ef4444; }
-        .viewport { flex: 1; position: relative; background: #000; overflow: hidden; }
-        #canvasContainer { width: 100%; height: 100%; }
-        .footer { height: 60px; background: #1f2937; border-top: 1px solid #374151; display: flex; align-items: center; justify-content: center; gap: 15px; flex-shrink: 0; z-index: 20; }
-        .btn-footer { background: #374151; border: 1px solid #4b5563; color: #e5e7eb; padding: 8px 16px; border-radius: 4px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 8px; }
+        .file-info { margin-top: 8px; font-size: 13px; color: #d1d5db; word-break: break-all; }
+
+        .btn-play {
+            width: 100%;
+            padding: 12px;
+            background: #10b981;
+            border: none;
+            border-radius: 4px;
+            color: white;
+            font-weight: bold;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            transition: background 0.2s;
+        }
+        .btn-play:hover { background: #059669; }
+        .btn-play.paused { background: #ef4444; }
+        .btn-play.paused:hover { background: #dc2626; }
+
+        input[type="range"] { width: 100%; margin: 12px 0; accent-color: #10b981; cursor: pointer; }
+        .row { display: flex; justify-content: space-between; font-size: 12px; color: #9ca3af; margin-bottom: 2px; }
+
+        .viewport {
+            flex: 1;
+            position: relative;
+            background: #000;
+            overflow: hidden;
+        }
+        #canvasContainer { width: 100%; height: 100%; outline: none; }
+
+        .footer {
+            height: 60px;
+            background: #1f2937;
+            border-top: 1px solid #374151;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0 20px;
+            gap: 15px;
+            flex-shrink: 0;
+            z-index: 20;
+            position: relative;
+        }
+
+        .btn-footer {
+            background: #374151;
+            border: 1px solid #4b5563;
+            color: #e5e7eb;
+            padding: 8px 16px;
+            border-radius: 4px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: all 0.2s;
+            height: 36px;
+            white-space: nowrap;
+        }
+        .btn-footer:hover:not(:disabled) { background: #4b5563; transform: translateY(-1px); }
         .btn-footer:disabled { opacity: 0.5; cursor: not-allowed; }
+        
         .btn-primary { background: #10b981; border-color: #10b981; color: white; }
+        .btn-primary:hover:not(:disabled) { background: #059669; }
+
         .hidden { display: none; }
-        .loader-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(17, 24, 39, 0.8); display: none; flex-direction: column; align-items: center; justify-content: center; z-index: 50; }
-        .spinner { width: 40px; height: 40px; border: 3px solid rgba(16, 185, 129, 0.3); border-top-color: #10b981; border-radius: 50%; animation: spin 1s linear infinite; }
+        .divider { width: 1px; height: 24px; background: #4b5563; margin: 0 5px; }
+
+        .loader-overlay {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(17, 24, 39, 0.8);
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            z-index: 50; display: none;
+        }
+        .spinner {
+            width: 40px; height: 40px;
+            border: 3px solid rgba(16, 185, 129, 0.3);
+            border-top-color: #10b981;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
         @keyframes spin { to { transform: rotate(360deg); } }
+        .loader-text { margin-top: 15px; color: #10b981; font-weight: bold; }
+
+        @media (max-width: 768px) {
+            .main-container { flex-direction: column; }
+            .sidebar { width: 100%; height: 50%; border-right: none; border-bottom: 1px solid #374151; }
+            .viewport { height: 50%; }
+            .footer { overflow-x: auto; justify-content: flex-start; }
+        }
     </style>
 </head>
 <body>
@@ -45,8 +189,8 @@
                 <div class="panel">
                     <span class="panel-label">1. Base File (Required)</span>
                     <div class="file-drop" id="dropZone">
-                        <i class="fas fa-file-import fa-lg" style="color:#9ca3af;"></i>
-                        <div id="fileName" class="file-info" style="margin-top:8px;">Drag .bytes file here</div>
+                        <i class="fas fa-file-import fa-lg" style="color:#9ca3af; margin-bottom:5px;"></i>
+                        <div id="fileName" class="file-info">Drag .bytes file here</div>
                     </div>
                     <input type="file" id="mainFileInput" class="hidden" accept=".bytes,.bin,.dat,.anim">
                 </div>
@@ -54,32 +198,42 @@
                     <span class="panel-label">2. Playback</span>
                     <button id="playBtn" class="btn-play"><i class="fas fa-play"></i> Play</button>
                     <div style="margin-top: 15px;">
-                        <div style="display:flex; justify-content:space-between; font-size:12px; color:#9ca3af;">
-                            <span>Timeline</span><span id="frameDisplay">0 / 0</span>
-                        </div>
-                        <input type="range" id="timeline" min="0" value="0" step="1" style="width:100%; margin:10px 0;">
+                        <div class="row"><span>Timeline</span><span id="frameDisplay">0 / 0</span></div>
+                        <input type="range" id="timeline" min="0" value="0" step="1">
                     </div>
-                    <div>
-                        <div style="display:flex; justify-content:space-between; font-size:12px; color:#9ca3af;">
-                            <span>Speed</span><span id="speedDisplay">30 FPS</span>
-                        </div>
-                        <input type="range" id="speed" min="1" max="120" value="30" style="width:100%; margin:10px 0;">
+                    <div style="margin-top: 5px;">
+                        <div class="row"><span>Speed</span><span id="speedDisplay">30 FPS</span></div>
+                        <input type="range" id="speed" min="1" max="120" value="30">
                     </div>
+                </div>
+                <div class="panel">
+                    <span class="panel-label">Metadata</span>
+                    <div class="row" style="margin-bottom:5px"><span>Bones:</span> <span id="infoBones">0</span></div>
+                    <div class="row"><span>Frames:</span> <span id="infoFrames">0</span></div>
                 </div>
             </div>
         </div>
         <div class="viewport">
             <div id="canvasContainer"></div>
-            <div id="loader" class="loader-overlay"><div class="spinner"></div><div style="margin-top:15px; color:#10b981;">Processing...</div></div>
+            <div id="loader" class="loader-overlay">
+                <div class="spinner"></div>
+                <div class="loader-text">Processing...</div>
+            </div>
         </div>
     </div>
     <div class="footer">
         <input type="file" id="gltfInput" class="hidden" accept=".gltf,.glb">
-        <button id="btnImportGltf" class="btn-footer"><i class="fas fa-file-upload"></i> Import GLTF</button>
-        <button id="btnExportGltf" class="btn-footer" disabled><i class="fas fa-file-download"></i> Export GLTF</button>
-        <button id="btnCompile" class="btn-footer btn-primary" disabled><i class="fas fa-save"></i> Compile Binary</button>
+        <button id="btnImportGltf" class="btn-footer">
+            <i class="fas fa-file-upload"></i> Import GLTF Data
+        </button>
+        <button id="btnExportGltf" class="btn-footer" disabled>
+            <i class="fas fa-file-download"></i> Export to GLTF
+        </button>
+        <div class="divider"></div>
+        <button id="btnCompile" class="btn-footer btn-primary" disabled>
+            <i class="fas fa-save"></i> Compile Binary
+        </button>
     </div>
-
     <script type="importmap">
         {
             "imports": {
@@ -88,177 +242,6 @@
             }
         }
     </script>
-
-    <script type="module">
-        import { renderer } from './render.js';
-        import { logicHandler } from './logic.js';
-        import { gltfHandler } from './gltf.js';
-
-        const state = {
-            animationData: null,
-            isPlaying: false,
-            currentFrame: 0,
-            fps: 30,
-            lastTime: 0
-        };
-
-        const els = {
-            dropZone: document.getElementById('dropZone'),
-            fileInput: document.getElementById('mainFileInput'),
-            gltfInput: document.getElementById('gltfInput'),
-            playBtn: document.getElementById('playBtn'),
-            timeline: document.getElementById('timeline'),
-            speed: document.getElementById('speed'),
-            status: document.getElementById('statusText'),
-            loader: document.getElementById('loader'),
-            btnImport: document.getElementById('btnImportGltf'),
-            btnExport: document.getElementById('btnExportGltf'),
-            btnCompile: document.getElementById('btnCompile')
-        };
-
-        // --- Initialization ---
-        renderer.init('canvasContainer');
-        loop();
-
-        // --- Event Listeners ---
-        els.dropZone.onclick = () => els.fileInput.click();
-        els.fileInput.onchange = (e) => loadBaseFile(e.target.files[0]);
-        
-        els.btnImport.onclick = () => els.gltfInput.click();
-        els.gltfInput.onchange = (e) => handleGltfImport(e.target.files[0]);
-
-        els.btnExport.onclick = async () => {
-            if(!state.animationData) return;
-            showLoader(true);
-            try {
-                const blob = await gltfHandler.exportGLTF(state.animationData, state.fps);
-                download(blob, 'animation_export.gltf');
-                setStatus('Export Successful', 'success');
-            } catch(e) { setStatus('Export Failed: ' + e.message, 'error'); }
-            showLoader(false);
-        };
-
-        els.btnCompile.onclick = () => {
-            if(!state.animationData) return;
-            try {
-                const buffer = logicHandler.repack(state.animationData);
-                download(new Blob([buffer]), 'compiled_animation.bytes');
-                setStatus('Compiled Successfully', 'success');
-            } catch(e) { setStatus('Compile Error: ' + e.message, 'error'); }
-        };
-
-        els.playBtn.onclick = () => {
-            state.isPlaying = !state.isPlaying;
-            updateUI();
-        };
-
-        els.timeline.oninput = (e) => {
-            state.isPlaying = false;
-            state.currentFrame = parseInt(e.target.value);
-            renderCurrentFrame();
-            updateUI();
-        };
-
-        els.speed.oninput = (e) => {
-            state.fps = parseInt(e.target.value);
-            document.getElementById('speedDisplay').textContent = state.fps + " FPS";
-        };
-
-        // --- Core Functions ---
-
-        async function loadBaseFile(file) {
-            if (!file) return;
-            showLoader(true);
-            document.getElementById('fileName').textContent = file.name;
-            try {
-                const buffer = await file.arrayBuffer();
-                state.animationData = await logicHandler.parse(buffer);
-                renderer.buildSkeleton(); // Init skeleton structure
-                resetPlayback();
-                
-                els.btnExport.disabled = false;
-                els.btnCompile.disabled = false;
-                setStatus('File Loaded Successfully', 'success');
-            } catch (err) {
-                setStatus('Error: ' + err.message, 'error');
-                console.error(err);
-            }
-            showLoader(false);
-        }
-
-        async function handleGltfImport(file) {
-            if (!file || !state.animationData) {
-                setStatus('Load base file first!', 'error');
-                return;
-            }
-            showLoader(true);
-            try {
-                // Pass existing data to handle potential trailing data multiplication
-                const newData = await gltfHandler.importGLTF(file, state.fps, state.animationData);
-                
-                state.animationData.frames = newData.frames;
-                state.animationData.framesCount = newData.framesCount;
-                if(newData.trailingData) state.animationData.trailingData = newData.trailingData;
-
-                resetPlayback();
-                setStatus(`Imported ${newData.framesCount} frames` + (newData.trailingDataMultiplier > 1 ? ` (Trailing ×${newData.trailingDataMultiplier})` : ''), 'success');
-            } catch (err) {
-                setStatus('Import Error: ' + err.message, 'error');
-            }
-            showLoader(false);
-        }
-
-        function resetPlayback() {
-            state.currentFrame = 0;
-            state.isPlaying = true;
-            els.timeline.max = state.animationData.framesCount - 1;
-            updateUI();
-        }
-
-        function renderCurrentFrame() {
-            if (state.animationData && state.animationData.frames[state.currentFrame]) {
-                renderer.applyFrame(state.animationData.frames[state.currentFrame]);
-            }
-        }
-
-        function loop(timestamp) {
-            requestAnimationFrame(loop);
-            if (state.isPlaying && state.animationData) {
-                const interval = 1000 / state.fps;
-                if (timestamp - state.lastTime > interval) {
-                    state.currentFrame = (state.currentFrame + 1) % state.animationData.framesCount;
-                    renderCurrentFrame();
-                    updateUI();
-                    state.lastTime = timestamp;
-                }
-            }
-        }
-
-        // --- UI Helpers ---
-
-        function updateUI() {
-            els.timeline.value = state.currentFrame;
-            document.getElementById('frameDisplay').textContent = `${state.currentFrame} / ${state.animationData ? state.animationData.framesCount : 0}`;
-            els.playBtn.innerHTML = state.isPlaying ? '<i class="fas fa-pause"></i> Pause' : '<i class="fas fa-play"></i> Play';
-            els.playBtn.className = `btn-play ${state.isPlaying ? 'paused' : ''}`;
-        }
-
-        function setStatus(msg, type) {
-            els.status.textContent = msg;
-            els.status.className = 'status-line ' + type;
-        }
-
-        function showLoader(show) {
-            els.loader.style.display = show ? 'flex' : 'none';
-        }
-
-        function download(blob, filename) {
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url; a.download = filename;
-            document.body.appendChild(a); a.click(); document.body.removeChild(a);
-            URL.revokeObjectURL(url);
-        }
-    </script>
+    <script type="module" src="./app.js"></script>
 </body>
 </html>
