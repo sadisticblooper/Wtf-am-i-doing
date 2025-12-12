@@ -184,7 +184,7 @@ class AnimationParser {
                 framesCount: this.origFramesCount,
                 bonesCount: this.bonesCount,
                 boneIds: this.boneIds,
-                trailingData: trailingData
+                trailingData: trailingData // Pass this to GLTF Handler
             };
         } catch (error) {
             console.error(error);
@@ -204,15 +204,19 @@ class AnimationParser {
         const preHeaderSize = this.headerStart; 
         const headerSize = this.headerEnd - this.headerStart;
         
-        // Determine footer buffer: Use modified trailing data if present, otherwise fallback to original
+        // --- FIX: Determine correct footer buffer and SIZE ---
         let footerBuffer;
         if (animationData.trailingData && animationData.trailingData.byteLength > 0) {
+            // Use the multiplied/modified trailing data
             footerBuffer = new Uint8Array(animationData.trailingData);
         } else {
+            // Fallback to original if no update occurred
             footerBuffer = new Uint8Array(this.originalFileBuffer.slice(this.animationDataEnd));
         }
-        
+
+        // --- FIX: Calculate Total Size using the ACTUAL footer buffer length ---
         const totalSize = preHeaderSize + headerSize + bodySize + footerBuffer.byteLength;
+        
         const finalBuffer = new Uint8Array(totalSize);
         const finalDv = new DataView(finalBuffer.buffer);
         
